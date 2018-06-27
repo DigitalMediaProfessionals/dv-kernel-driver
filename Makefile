@@ -22,7 +22,7 @@ obj-m := $(MOD).o
 $(MOD)-objs  := ./src/CNV_km.o 
 $(MOD)-objs  += ./src/pdc.o 
 
-CNV: 
+all: 
 	$(MAKEARCH) -C $(KERNELDIR) M=$(PWD) modules
 
 clean: 
