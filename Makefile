@@ -1,22 +1,18 @@
-
-# board dependencies:
-ifeq ($(board),arria10)
-  BDDEF=DMP_ARRIA10
-  KERNELDIR=/home/share/steven/arria10/kernel/linux-socfpga-rel_socfpga-3.10-ltsi-rt_16.03.02_pr
-  CROSS_COMPILE=arm-linux-gnueabi-
+ifeq ($(BOARD), arria10)
+  BDDEF = DMP_ARRIA10
 else
-  BDDEF=DMP_ZC706
-  KERNELDIR=/home/cnn-hw1/users/steven/zc706_SWEnv/linux-xlnx-xilinx-v2017.2
-  CROSS_COMPILE=/usr/local/tools/xilinx/Vivado_2017.2_0616_1/SDK/2017.2/gnu/arm/lin/bin/arm-xilinx-linux-gnueabi-
+  BDDEF = DMP_ZC706
 endif
 
+KERNELDIR ?= /lib/modules/`uname -r`/build
+CROSS_COMPILE ?= arm-linux-gnueabihf-
 BUILD_DIR := $(shell pwd)
 VERBOSE = 0
-PWD=$(shell pwd)
+PWD = $(shell pwd)
 MOD = DMP_drm
-ARCH=arm
+ARCH = arm
 
-MAKEARCH=$(MAKE) ARCH=$(ARCH) KCPPFLAGS="-D$(BDDEF)" CROSS_COMPILE=$(CROSS_COMPILE)
+MAKEARCH = $(MAKE) ARCH=$(ARCH) KCPPFLAGS="-D$(BDDEF)" CROSS_COMPILE=$(CROSS_COMPILE)
 
 obj-m := $(MOD).o 
 $(MOD)-objs  := ./src/CNV_km.o 
