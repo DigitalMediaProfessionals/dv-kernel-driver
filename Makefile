@@ -21,5 +21,5 @@ all:
 	$(MAKEARCH) -C $(KERNELDIR) M=$(PWD) modules
 
 clean: 
-	rm -rf *.ko *.o *.order src/*.o .tmp_vers* *.symvers *.mod.c .DMP* src/.*.cmd
+	rm -rf *.ko *.o *.order src/*.o .tmp_vers* *.symvers *.mod.c .dmp* src/.*.cmd
 
