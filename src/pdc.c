@@ -57,7 +57,6 @@ typedef struct pdc_context_mini {
 	display_info_t *disp_info;
 } pdc_context_t;
 
-
 #define LCDC_FORMAT_RGBA8888 0
 #define LCDC_FORMAT_ARGB8888 5
 #define LCDC_FORMAT_ABGR8888 6
@@ -137,18 +136,18 @@ static void lcdc_set_parameters(pdc_context_t *ctx, void __iomem *pdc_addr)
 	   -> B_border=0 -> frontporch(lower_margin)  -> vsync   */
 
 	/* total count */
-	val = info->left_margin + info->xres + info->right_margin
-	      + info->hsync_len;
-	val2 = info->upper_margin + info->yres + info->lower_margin
-	       + info->vsync_len;
+	val = info->left_margin + info->xres + info->right_margin +
+	      info->hsync_len;
+	val2 = info->upper_margin + info->yres + info->lower_margin +
+	       info->vsync_len;
 	io_write32(REG_H_COUNT_SIZE_MINUS_1, val - (info->reverse ? 1 : 1));
 	io_write32(REG_V_COUNT_SIZE_MINUS_1, val2 - (info->reverse ? 1 : 0));
 
 	/* active start */
 	if (info->reverse) {
 		val = info->left_margin + info->right_margin + info->hsync_len;
-		val2 = info->upper_margin + info->lower_margin
-		       + info->vsync_len;
+		val2 = info->upper_margin + info->lower_margin +
+		       info->vsync_len;
 	} else {
 		val = info->left_margin;
 		val2 = info->upper_margin;
@@ -164,10 +163,10 @@ static void lcdc_set_parameters(pdc_context_t *ctx, void __iomem *pdc_addr)
 
 	/* blank start -- this means "front-porch start" */
 	if (info->reverse) {
-		val = info->left_margin + info->xres + info->right_margin
-		      + info->hsync_len;
-		val2 = info->upper_margin + info->yres + info->lower_margin
-		       + info->vsync_len;
+		val = info->left_margin + info->xres + info->right_margin +
+		      info->hsync_len;
+		val2 = info->upper_margin + info->yres + info->lower_margin +
+		       info->vsync_len;
 		io_write32(REG_H_BLANK, 0);
 		io_write32(REG_H_RIGHT_BORDER, val - 1);
 		io_write32(REG_V_BLANK, 0);
@@ -213,10 +212,10 @@ static void lcdc_set_parameters(pdc_context_t *ctx, void __iomem *pdc_addr)
 		val = info->right_margin + info->hsync_len;
 		val2 = info->lower_margin + info->vsync_len;
 	} else {
-		val = info->left_margin + info->xres + info->right_margin
-		      + info->hsync_len;
-		val2 = info->upper_margin + info->yres + info->lower_margin
-		       + info->vsync_len;
+		val = info->left_margin + info->xres + info->right_margin +
+		      info->hsync_len;
+		val2 = info->upper_margin + info->yres + info->lower_margin +
+		       info->vsync_len;
 	}
 	io_write32(REG_H_BACK_PORCH, val);
 	io_write32(REG_V_BACK_PORCH, val2);
@@ -237,7 +236,7 @@ static void lcdc_set_parameters(pdc_context_t *ctx, void __iomem *pdc_addr)
 	io_write32(REG_OUT_SIZE, val);
 
 	/* pixel border */
-	val = io_read32(REG_H_ADDR_TIME_START);		   /* start */
+	val = io_read32(REG_H_ADDR_TIME_START); /* start */
 	val2 = val + info->xres - (info->reverse ? 1 : 0); /* end   */
 	if (info->xres != info->xres_virtual) {
 		val = val + info->xoffset;
@@ -245,7 +244,7 @@ static void lcdc_set_parameters(pdc_context_t *ctx, void __iomem *pdc_addr)
 	}
 	io_write32(REG_PIC_BORDER_H, (val2 << 16) | val);
 
-	val = io_read32(REG_V_ADDR_TIME_START);		   /* start */
+	val = io_read32(REG_V_ADDR_TIME_START); /* start */
 	val2 = val + info->yres - (info->reverse ? 1 : 0); /* end   */
 	if (info->yres != info->yres_virtual) {
 		val = val + info->yoffset;
@@ -263,8 +262,8 @@ static void lcdc_set_parameters(pdc_context_t *ctx, void __iomem *pdc_addr)
 
 	/* Mode -- format, burst length, req interval */
 	val = ctx->open->fb_format;
-	if (val
-	    >= LCDC_FORMAT_ARGB8888) /* need to swap -- set to other register */
+	if (val >=
+	    LCDC_FORMAT_ARGB8888) /* need to swap -- set to other register */
 		val = LCDC_FORMAT_RGBA8888;
 
 	val2 = 0x00080200; //(8 << 16) | (3 << 8) | (1 << 7) | val;
@@ -341,7 +340,7 @@ void displaySetup(int dispType)
 	if (dispType == DISP_VESAVGA) {
 		IMAGE_WIDTH = 640;
 		IMAGE_HEIGHT = 480;
-		LEFT_MARGIN = 48;  /* same as back porch (H) */
+		LEFT_MARGIN = 48; /* same as back porch (H) */
 		RIGHT_MARGIN = 16; /* same as front porch (H) */
 		HSYNC_LENGTH = 96;
 		UPPER_MARGIN = 33; /* same as back porch (V) */
@@ -354,7 +353,7 @@ void displaySetup(int dispType)
 		RIGHT_MARGIN = 24; /* same as front porch (H) */
 		HSYNC_LENGTH = 136;
 		UPPER_MARGIN = 29; /* same as back porch (V) */
-		LOWER_MARGIN = 3;  /* same as front porch (V) */
+		LOWER_MARGIN = 3; /* same as front porch (V) */
 		VSYNC_LENGTH = 6;
 	} else if (dispType == DISP_VESAXGA_RB) {
 		IMAGE_WIDTH = 1024;
@@ -372,12 +371,12 @@ void displaySetup(int dispType)
 		RIGHT_MARGIN = 72; /* same as front porch (H) */
 		HSYNC_LENGTH = 80;
 		UPPER_MARGIN = 22; /* same as back porch (V) */
-		LOWER_MARGIN = 3;  /* same as front porch (V) */
+		LOWER_MARGIN = 3; /* same as front porch (V) */
 		VSYNC_LENGTH = 5;
 	} else if (dispType == DISP_SMALLDISP) {
 		IMAGE_WIDTH = 800;
 		IMAGE_HEIGHT = 480;
-		LEFT_MARGIN = 96;  /* same as back porch (H) */
+		LEFT_MARGIN = 96; /* same as back porch (H) */
 		RIGHT_MARGIN = 24; /* same as front porch (H) */
 		HSYNC_LENGTH = 72;
 		UPPER_MARGIN = 7; /* same as back porch (V) */
@@ -390,16 +389,16 @@ void displaySetup(int dispType)
 		RIGHT_MARGIN = 88; /* same as front porch (H) */
 		HSYNC_LENGTH = 44;
 		UPPER_MARGIN = 36; /* same as back porch (V) */
-		LOWER_MARGIN = 4;  /* same as front porch (V) */
+		LOWER_MARGIN = 4; /* same as front porch (V) */
 		VSYNC_LENGTH = 5;
 	} else if (dispType == DISP_VESA4K) {
 		IMAGE_WIDTH = 3840;
 		IMAGE_HEIGHT = 2160;
-		LEFT_MARGIN = 560;  /* same as back porch (H) */
+		LEFT_MARGIN = 560; /* same as back porch (H) */
 		RIGHT_MARGIN = 176; /* same as front porch (H) */
 		HSYNC_LENGTH = 88;
 		UPPER_MARGIN = 90; /* same as back porch (V) */
-		LOWER_MARGIN = 8;  /* same as front porch (V) */
+		LOWER_MARGIN = 8; /* same as front porch (V) */
 		VSYNC_LENGTH = 10;
 	} else if (dispType == DISP_FHD17) {
 		IMAGE_WIDTH = 1920;
@@ -408,17 +407,17 @@ void displaySetup(int dispType)
 		RIGHT_MARGIN = 68; /* same as front porch (H) */
 		HSYNC_LENGTH = 44;
 		UPPER_MARGIN = 36; /* same as back porch (V) */
-		LOWER_MARGIN = 4;  /* same as front porch (V) */
+		LOWER_MARGIN = 4; /* same as front porch (V) */
 		VSYNC_LENGTH = 5;
 	} else {
 		IMAGE_WIDTH = 1920;
 		IMAGE_HEIGHT = 1080;
-		LEFT_MARGIN = 280; /* same as back porch (H) */  // onlap = 148
+		LEFT_MARGIN = 280; /* same as back porch (H) */ // onlap = 148
 		RIGHT_MARGIN = 88; /* same as front porch (H) */ // onlap = 88
-		HSYNC_LENGTH = 44;				 // onlap = 32
-		UPPER_MARGIN = 45; /* same as back porch (V) */  // onlap 31
-		LOWER_MARGIN = 4; /* same as front porch (V) */  // onlap 2
-		VSYNC_LENGTH = 5;				 // default 5
+		HSYNC_LENGTH = 44; // onlap = 32
+		UPPER_MARGIN = 45; /* same as back porch (V) */ // onlap 31
+		LOWER_MARGIN = 4; /* same as front porch (V) */ // onlap 2
+		VSYNC_LENGTH = 5; // default 5
 	}
 }
 

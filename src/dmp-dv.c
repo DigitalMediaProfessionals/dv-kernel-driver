@@ -25,12 +25,12 @@
 //#define DMP_COHDMA
 // map {0=CNV,1=PDC,2=FC} to irq Offset:
 #ifdef USE_DEVTREE
-static int sd2iMap[3] = {0, 3, 2}; // {0,1,2} for KINT
+static int sd2iMap[3] = { 0, 3, 2 }; // {0,1,2} for KINT
 #else
-static int sd2iMap[3] = {61, 64, 63}; // {61,62,63} for KINT
+static int sd2iMap[3] = { 61, 64, 63 }; // {61,62,63} for KINT
 #endif
 // map {0=CNV,1=PDC,2=FC} to regBaseAddr:
-static unsigned int sd2rb[3] = {0x43c00000, 0x43c10000, 0x43c20000};
+static unsigned int sd2rb[3] = { 0x43c00000, 0x43c10000, 0x43c20000 };
 #endif
 #ifdef DMP_ARRIA10
 //#define USE_DEVTREE
@@ -40,16 +40,16 @@ static unsigned int sd2rb[3] = {0x43c00000, 0x43c10000, 0x43c20000};
 #define F2SD_RST_ADDR 0x2c
 // map {0=CNV,1=PDC,2=FC} to irq Offset:
 #ifdef USE_DEVTREE
-static int sd2iMap[3] = {2, 1, 3}; // {2,0,3} for KINT
+static int sd2iMap[3] = { 2, 1, 3 }; // {2,0,3} for KINT
 #else
-static int sd2iMap[3] = {53, 52, 54}; // {2,0,3} for KINT
+static int sd2iMap[3] = { 53, 52, 54 }; // {2,0,3} for KINT
 #endif
 // map {0=CNV,1=PDC,2=FC} to regBaseAddr:
 // static unsigned int sd2rb[3]={0xff210000,0xff200000,0xff220000};
-static unsigned int sd2rb[3] = {0xff210000, 0xff220000, 0xff200000};
+static unsigned int sd2rb[3] = { 0xff210000, 0xff220000, 0xff200000 };
 #endif
 // map {0=CNV,1=PDC,2=FC} to regSize:
-static unsigned int sd2rs[3] = {0x2000, 0x100, 0x100};
+static unsigned int sd2rs[3] = { 0x2000, 0x100, 0x100 };
 
 #include <linux/device.h>
 #include <linux/platform_device.h>
@@ -76,7 +76,6 @@ static unsigned int sd2rs[3] = {0x2000, 0x100, 0x100};
 #include <linux/of_irq.h>
 #endif
 #include "pdc.h"
-
 
 #define CNV_IOC_MAJOR 0x82
 #define CNV_WAITPDC _IOR(CNV_IOC_MAJOR, 3, unsigned int)
@@ -143,7 +142,6 @@ struct drm_dev {
 };
 
 static struct class *dddrm_class = NULL;
-
 
 static irqreturn_t handleInt_p(int irq, void *dev_id)
 {
@@ -312,7 +310,6 @@ static unsigned int dmaAlloc(unsigned int size, unsigned int *sizeO,
 #endif
 }
 
-
 static int memSetup(struct drm_dev *drm_dev)
 {
 	int k, j, fbSize, allocT, allocTGT;
@@ -405,9 +402,8 @@ static int memSetup(struct drm_dev *drm_dev)
 				else {
 					int p = 0, q = 0;
 					for (q = 0; q < k; q++)
-						if (memSecCP[k * 2 + 1]
-						    < memSecCP[2 * secOrd[q]
-							       + 1])
+						if (memSecCP[k * 2 + 1] <
+						    memSecCP[2 * secOrd[q] + 1])
 							p = q + 1;
 					for (q = k - 1; q >= p; q--)
 						secOrd[q + 1] = secOrd[q];
@@ -562,7 +558,6 @@ fail_size:
 	return err;
 }
 
-
 static struct file_operations drm_file_operations = {
 	.owner = THIS_MODULE,
 	.open = drm_open,
@@ -570,7 +565,6 @@ static struct file_operations drm_file_operations = {
 	.unlocked_ioctl = drm_ioctl,
 	.mmap = drm_mmap,
 };
-
 
 int drm_register_chrdev(struct drm_dev *drm_dev)
 {
@@ -833,7 +827,6 @@ static int drm_dev_remove(struct platform_device *pdev)
 	return 0;
 }
 
-
 static struct platform_driver drm_platform_driver = {
 	.probe = drm_dev_probe,
 	.remove = drm_dev_remove,
@@ -843,7 +836,6 @@ static struct platform_driver drm_platform_driver = {
 			.owner = THIS_MODULE,
 		},
 };
-
 
 static int __init drm_init(void)
 {
