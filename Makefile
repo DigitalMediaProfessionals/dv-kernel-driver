@@ -9,14 +9,13 @@ CROSS_COMPILE ?= arm-linux-gnueabihf-
 BUILD_DIR := $(shell pwd)
 VERBOSE = 0
 PWD = $(shell pwd)
-MOD = DMP_drm
+MOD = dmp-dv
 ARCH = arm
 
 MAKEARCH = $(MAKE) ARCH=$(ARCH) KCPPFLAGS="-D$(BDDEF)" CROSS_COMPILE=$(CROSS_COMPILE)
 
 obj-m := $(MOD).o 
-$(MOD)-objs  := ./src/CNV_km.o 
-$(MOD)-objs  += ./src/pdc.o 
+$(MOD)-objs  := ./src/dmp-dv.o 
 
 all: 
 	$(MAKEARCH) -C $(KERNELDIR) M=$(PWD) modules
