@@ -1,5 +1,6 @@
 /*
  *  DV700 kernel driver
+ *
  *  Copyright (C) 2018  Digital Media Professionals Inc.
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -169,7 +170,7 @@ static int drm_open(struct inode *inode, struct file *file)
 
 	*subdev = drm_dev->subdev[minor];
 	subdev->cmb_logical = dma_alloc_coherent(
-		drm_dev->dev, PAGE_SIZE, &subdev->cmb_physical, GFP_USER);
+		drm_dev->dev, PAGE_SIZE, &subdev->cmb_physical, GFP_KERNEL);
 	if (!subdev->cmb_logical) {
 		ret = -ENOMEM;
 		kfree(subdev);
