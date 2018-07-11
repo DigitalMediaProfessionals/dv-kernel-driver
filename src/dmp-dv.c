@@ -183,7 +183,12 @@ drm_open_fail:
 
 static int drm_release(struct inode *inode, struct file *file)
 {
-	struct dmp_dev *subdev = file->private_data;
+	struct drm_dev *drm_dev;
+	struct dmp_dev *subdev;
+	drm_dev = container_of(inode->i_cdev, struct drm_dev, cdev);
+	subdev = file->private_data;
+	dma_free_coherent(drm_dev->dev, PAGE_SIZE, subdev->cmb_logical,
+			  subdev->cmb_physical);
 	kfree(subdev);
 	return 0;
 }
