@@ -21,44 +21,17 @@
 #include <linux/types.h>
 
 /**
- * struct dmp_dv_offset_info - entry of offset filling information array.
- * @buf_index:		Index of the buffer to use.
- * @offset:		Bytes offset from the beginning of cmd data.
- */
-struct dmp_dv_offset_info {
-	__u32 buf_index;
-	__u32 offset;
-};
-
-/**
  * struct dmp_dv_cmd - cmd data passed from userspace to append to cmd buffer.
- * @cmd_size:		cmd size in bytes.
- * @buf_num:		Number of buffers used in this cmd.
- * @offset_num:		Number of offsets needed to be filled by the kernel.
- * @cmd_pointer:	Pointer to the cmd data.
- * @buf_pointer:	Pointer to the used buffers list array. Actual type is
- *			pointer to fd array <int*>.
- * @offset_pointer:	Pointer to the offsets filling information array. Actual
- *			type is <struct dmp_dv_offset_info array*>.
+ * @cmd_num:		Number of cmds stored in the cmd_pointer.
+ * @cmd_pointer:	Pointer to the array of cmd data.
  */
 struct dmp_dv_cmd {
-	__u32 cmd_size;
-	__u32 buf_num;
-	__u32 offset_num;
+	__u32 cmd_num;
 	__u32 reserved0; /* align to 64bits */
 	__u64 cmd_pointer;
-	__u64 buf_pointer;
-	__u64 offset_pointer;
 };
 
 #define DMP_DV_IOC_MAGIC		0x82
-
-/**
- * DOC: DMP_DV_IOC_RESET - Reset command buffer.
- *
- * Reset the command buffer and clear all previously appended commands.
- */
-#define DMP_DV_IOC_RESET		_IO(DMP_DV_IOC_MAGIC, 0)
 
 /**
  * DOC: DMP_DV_IOC_APPEND_CMD - Append command(s) to the command buffer.
