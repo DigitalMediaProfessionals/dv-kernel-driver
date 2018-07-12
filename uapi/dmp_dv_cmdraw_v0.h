@@ -47,7 +47,7 @@ typedef struct dmp_dv_cmdraw_v0_conv_run_impl {
   __u16 actfunc_param;    // Leaky ReLU parameter in FP16
   __u16 rectifi_en;       // Rectification, i.e. max(0, x) (NOTE: Can be applied after non-ReLU activation function)
   __u16 lrn;              // Bits [0]: 1 = LRN enable, 0 = LRN disable, [1]: 1 = incl. power func, 0 = excl., [8:11]: x^2 scale factor log2
-  __u16 rsvd;             // Padding to 64-bit size
+  __u16 rsvd;             // padding to 64-bit size
 } dmp_dv_cmdraw_v0_conv_run;
 
 
