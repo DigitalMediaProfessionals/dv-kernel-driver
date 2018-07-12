@@ -20,7 +20,6 @@
 #ifndef _UAPI_LINUX_DMP_DV_CMDRAW_V0_H
 #define _UAPI_LINUX_DMP_DV_CMDRAW_V0_H
 
-#include <linux/ioctl.h>
 #include <linux/types.h>
 
 
