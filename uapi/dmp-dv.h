@@ -13,12 +13,28 @@
  * GNU General Public License for more details.
  *
  */
+#pragma once
 
 #ifndef _UAPI_LINUX_DMP_DV_H
 #define _UAPI_LINUX_DMP_DV_H
 
 #include <linux/ioctl.h>
 #include <linux/types.h>
+
+
+/// @brief Memory buffer specification.
+typedef struct dmp_dv_buf_impl {
+  __u64 fd;    // ION file descriptor
+  __u64 offs;  // Offset from the start of the buffer
+} dmp_dv_buf;
+
+
+/// @brief Raw command for execution.
+typedef struct dmp_dv_cmdraw_impl {
+  __u32 size;     // size of this structure
+  __u32 version;  // version of this structure
+} dmp_dv_cmdraw;
+
 
 /**
  * struct dmp_dv_cmd - cmd data passed from userspace to append to cmd buffer.
@@ -70,4 +86,4 @@ struct dmp_dv_cmd {
  */
 #define DMP_DV_IOC_GET_KICK_COUNT	_IOR(DMP_DV_IOC_MAGIC, 4, __u32)
 
-#endif
+#endif  // _UAPI_LINUX_DMP_DV_H
