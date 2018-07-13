@@ -18,7 +18,7 @@
 #define DRM_NUM_SUBDEV 2
 
 #ifdef DMP_ZC706
-#define USE_DEVTREE
+//#define USE_DEVTREE
 // map {0=CNV,1=FC} to irq Offset:
 #ifdef USE_DEVTREE
 static int sd2i_map[2] = { 0, 2 };
@@ -463,6 +463,7 @@ static void drm_dev_release(struct device *dev)
 {
 }
 
+static u64 drm_dma_mask;
 static struct platform_device drm_platform_device = {
 	.name = DRM_DEV_NAME,
 	.id = -1,
@@ -470,6 +471,7 @@ static struct platform_device drm_platform_device = {
 	.resource = NULL,
 	.dev =
 		{
+			.dma_mask = &drm_dma_mask,
 			.release = drm_dev_release,
 		},
 };
