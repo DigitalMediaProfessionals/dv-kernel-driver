@@ -23,30 +23,30 @@
 
 
 /// @brief Memory buffer specification.
-typedef struct dmp_dv_buf_impl {
+typedef struct dmp_dv_kbuf_impl {
   __u32 fd;    // ION file descriptor
   __u32 rsvd;  // padding to 64-bit size
   __u64 offs;  // offset from the start of the buffer
-} dmp_dv_buf;
+} dmp_dv_kbuf;
 
 
 /// @brief Raw command for execution.
-typedef struct dmp_dv_cmdraw_impl {
+typedef struct dmp_dv_kcmdraw_impl {
   __u32 size;     // size of this structure
   __u32 version;  // version of this structure
-} dmp_dv_cmdraw;
+} dmp_dv_kcmdraw;
 
 
 /**
- * struct dmp_dv_cmd - cmd data passed from userspace to append to cmd buffer.
+ * struct dmp_dv_kcmd - cmd data passed from userspace to append to cmd buffer.
  * @cmd_num:		Number of cmds stored in the cmd_pointer.
  * @cmd_pointer:	Pointer to the array of cmd data.
  */
-struct dmp_dv_cmd {
+typedef struct dmp_dv_kcmd_impl {
 	__u32 cmd_num;
 	__u32 reserved0; /* align to 64bits */
 	__u64 cmd_pointer;
-};
+} dmp_dv_kcmd;
 
 #define DMP_DV_IOC_MAGIC		0x82
 
