@@ -21,21 +21,18 @@
 #include <linux/ioctl.h>
 #include <linux/types.h>
 
-
 /// @brief Memory buffer specification.
 typedef struct dmp_dv_kbuf_impl {
-  __u32 fd;    // ION file descriptor
-  __u32 rsvd;  // padding to 64-bit size
-  __u64 offs;  // offset from the start of the buffer
+	__u32 fd;    // ION file descriptor
+	__u32 rsvd;  // padding to 64-bit size
+	__u64 offs;  // offset from the start of the buffer
 } dmp_dv_kbuf;
-
 
 /// @brief Raw command for execution.
 typedef struct dmp_dv_kcmdraw_impl {
-  __u32 size;     // size of this structure
-  __u32 version;  // version of this structure
+	__u32 size;     // size of this structure
+	__u32 version;  // version of this structure
 } dmp_dv_kcmdraw;
-
 
 /**
  * struct dmp_dv_kcmd - cmd data passed from userspace to append to cmd buffer.
@@ -59,8 +56,7 @@ typedef struct dmp_dv_kcmd_impl {
  *
  * If there is not enough memory for the command buffer, returns -ENOMEM.
  */
-#define DMP_DV_IOC_APPEND_CMD		_IOW(DMP_DV_IOC_MAGIC, 1, \
-						struct dmp_dv_cmd)
+#define DMP_DV_IOC_APPEND_CMD		_IOW(DMP_DV_IOC_MAGIC, 1, dmp_dv_kcmd)
 
 /**
  * DOC: DMP_DV_IOC_RUN - Run all commands in the command buffer.

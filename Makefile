@@ -15,7 +15,7 @@ ARCH = arm
 MAKEARCH = $(MAKE) ARCH=$(ARCH) KCPPFLAGS="-D$(BDDEF)" CROSS_COMPILE=$(CROSS_COMPILE)
 
 obj-m := $(MOD).o 
-$(MOD)-objs  := ./src/dmp-dv.o 
+$(MOD)-objs  := ./src/dmp-dv.o ./src/command.o
 
 all: 
 	$(MAKEARCH) -C $(KERNELDIR) M=$(PWD) modules

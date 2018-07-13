@@ -69,6 +69,7 @@ static const char *subdev_name[2] = { "conv", "fc" };
 #include <linux/of_irq.h>
 #endif
 
+#include "dmp-dv.h"
 #include "../uapi/dmp-dv.h"
 
 #define REG_IO_ADDR(DV, OF) ((void __iomem *)(DV->bar_logical) + OF)
@@ -86,6 +87,7 @@ struct dmp_dev {
 
 	dma_addr_t cmb_physical;
 	void *cmb_logical;
+	size_t cmb_size;
 };
 
 struct drm_dev {
@@ -171,6 +173,7 @@ static int drm_open(struct inode *inode, struct file *file)
 		ret = -ENOMEM;
 		kfree(subdev);
 	}
+	subdev->cmb_size = 0;
 
 	file->private_data = subdev;
 
@@ -193,9 +196,24 @@ static int drm_release(struct inode *inode, struct file *file)
 static long drm_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
 	long ret = 0;
-	//struct dmp_dev *subdev = file->private_data;
+	struct dmp_dev *subdev = file->private_data;
+	dmp_dv_kcmd cmd_info;
 
 	switch (cmd) {
+	case DMP_DV_IOC_APPEND_CMD:
+		if (_IOC_SIZE(cmd) > sizeof(cmd_info))
+			return -EINVAL;
+		if (copy_from_user(&cmd_info, (void __user *)arg,
+				   _IOC_SIZE(cmd)))
+			return -EFAULT;
+		dv_convert_command(subdev, &cmd_info);
+		break;
+	case DMP_DV_IOC_RUN:
+		break;
+	case DMP_DV_IOC_WAIT:
+		break;
+	case DMP_DV_IOC_GET_KICK_COUNT:
+		break;
 	default:
 		break;
 	}
