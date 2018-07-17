@@ -9,7 +9,7 @@ CROSS_COMPILE ?= arm-linux-gnueabihf-
 BUILD_DIR := $(shell pwd)
 VERBOSE = 0
 PWD = $(shell pwd)
-MOD = dmp-dv
+MOD = dmp_dv
 ARCH = arm
 
 MAKEARCH = $(MAKE) ARCH=$(ARCH) KCPPFLAGS="-D$(BDDEF)" CROSS_COMPILE=$(CROSS_COMPILE)

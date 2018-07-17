@@ -15,11 +15,14 @@
  */
 
 #include <linux/types.h>
+#include <linux/slab.h>
+#include <linux/uaccess.h>
 
 #include "dmp-dv.h"
 #include "../uapi/dmp_dv_cmdraw_v0.h"
 
 #define MAX_NUM_RUNS 32
+#define CMB_SIZE (16 * PAGE_SIZE)
 
 struct conv_header {
 	uint32_t topo; // Output Destination of each run
@@ -74,18 +77,33 @@ struct conv_configuration {
 	struct conv_run run[MAX_NUM_RUNS];
 };
 
-static int topo_num_runs(unsigned int i)
+int dv_cmb_init(struct device *dev, struct dmp_cmb *cmb)
 {
-	int n = 0;
+	cmb->logical =
+		dma_alloc_coherent(dev, CMB_SIZE, &cmb->physical, GFP_KERNEL);
+	if (!cmb->logical)
+		return -ENOMEM;
+	cmb->size = 0;
+	return 0;
+}
+
+void dv_cmb_finalize(struct device *dev, struct dmp_cmb *cmb)
+{
+	dma_free_coherent(dev, CMB_SIZE, cmb->logical, cmb->physical);
+}
+
+static unsigned int topo_num_runs(unsigned int i)
+{
+	unsigned int n = 0;
 	for (; i; i >>= 1, n++)
 		; // Faster for low n...
 	return n;
 }
 
 // Size of the configuration struct in bytes (unused run structs not counted)
-static int conf_size(struct conv_configuration *conf)
+static size_t conf_size(unsigned int topo)
 {
-	int n = topo_num_runs(conf->header.topo);
+	unsigned int n = topo_num_runs(topo);
 	return sizeof(struct conv_configuration) -
 	       (MAX_NUM_RUNS - n) * sizeof(struct conv_run);
 }
@@ -237,6 +255,91 @@ static void conv_output_size_calc(struct conv_run *run, struct conv_data_size *i
 }
 #endif
 
-int dv_convert_command(void *cmd_buf, dmp_dv_kcmd *cmd_info) {
+static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
+                              dmp_dv_kcmdraw __user *user_cmd, size_t size) {
+	dmp_dv_kcmdraw_v0 *cmd;
+	struct conv_configuration *conv;
+	size_t cmd_size;
+	unsigned int runs, i;
+	
+	cmd = vmalloc(size);
+	if (!cmd)
+		return -ENOMEM;
+	if (copy_from_user(cmd, user_cmd, size))
+		return -EFAULT;
+
+	runs = topo_num_runs(cmd->topo);
+	cmd_size = conf_size(cmd->topo);
+	// TODO: check the cmb remaining size is big enough for this command
+	conv = (struct conv_configuration *)((uint8_t *)cmb->logical +
+	                                     cmb->size);
+	conv->header.topo = cmd->topo;
+
+	conv->input.w = cmd->w;
+	conv->input.h = cmd->h;
+	conv->input.z = cmd->z;
+	conv->input.c = cmd->c;
+	conv->input.input_base_addr = 0; //TODO
+	conv->input.input_circular_offset = cmd->input_circular_offset;
+	conv->input.tiles = 1; //TODO
+	
+	conv->output.output_base_addr = 0; // TODO
+	conv->output.eltwise_base_addr = 0; // TODO
+	conv->output.output_mode = cmd->output_mode;
+	
+	for (i = 0; i < runs; ++i) {
+		conv->run[i].m = cmd->run[i].m;
+		conv->run[i].conv_enable = cmd->run[i].conv_enable;
+		conv->run[i].p = cmd->run[i].p;
+		conv->run[i].pz = cmd->run[i].pz;
+		conv->run[i].conv_pad = cmd->run[i].conv_pad;
+		conv->run[i].conv_stride = cmd->run[i].conv_stride;
+		conv->run[i].conv_dilation = cmd->run[i].conv_dilation;
+		conv->run[i].weight_base_addr = 0; // TODO
+		conv->run[i].weight_fmt = cmd->run[i].weight_fmt;
+		conv->run[i].pool_enable = cmd->run[i].pool_enable;
+		conv->run[i].pool_avg_param = cmd->run[i].pool_avg_param;
+		conv->run[i].pool_size = cmd->run[i].pool_size;
+		conv->run[i].pool_stride = cmd->run[i].pool_stride;
+		conv->run[i].pool_pad = cmd->run[i].pool_pad;
+		conv->run[i].actfunc = cmd->run[i].actfunc;
+		conv->run[i].actfunc_param = cmd->run[i].actfunc_param;
+		conv->run[i].rectifi_en = cmd->run[i].rectifi_en;
+		conv->run[i].lrn = cmd->run[i].lrn;
+	}
+	
+	cmb->size += cmd_size;
+
+	vfree(cmd);
 	return 0;
+}
+int dv_convert_command(struct device *dev, struct dmp_cmb *cmb,
+		       dmp_dv_kcmd *cmd_info)
+{
+	int i;
+	int ret = 0;
+	dmp_dv_kcmdraw __user *user_cmds;
+	dmp_dv_kcmdraw cmd;
+
+	user_cmds = u64_to_user_ptr(cmd_info->cmd_pointer);
+
+	for (i = 0; i < cmd_info->cmd_num; ++i) {
+		// get size and version first;
+		if (copy_from_user(&cmd, user_cmds, sizeof(cmd)))
+			return -EFAULT;
+		switch (cmd.version) {
+		case 0:
+			ret = dv_convert_conv_v0(dev, cmb, user_cmds, cmd.size);
+			if (!ret)
+				return ret;
+			break;
+		default:
+			pr_err(DRM_DEV_NAME ": Invalid command version.\n");
+			return -EINVAL;
+		}
+		user_cmds = (dmp_dv_kcmdraw __user *)((uint8_t *)user_cmds +
+						      cmd.size);
+	}
+
+	return ret;
 }

@@ -14,9 +14,6 @@
  *
  */
 
-#define DRM_DEV_NAME "dmp-dv"
-#define DRM_NUM_SUBDEV 2
-
 #ifdef DMP_ZC706
 #define USE_DEVTREE
 // map {0=CNV,1=FC} to irq Offset:
@@ -63,7 +60,6 @@ static const char *subdev_name[2] = { "conv", "fc" };
 #include <linux/ioctl.h>
 #include <linux/mm.h>
 #include <linux/sched.h>
-#include <linux/dma-mapping.h>
 #ifdef USE_DEVTREE
 #include <linux/of.h>
 #include <linux/of_irq.h>
@@ -85,9 +81,7 @@ struct dmp_dev {
 	unsigned int bar_size;
 	void *bar_logical;
 
-	dma_addr_t cmb_physical;
-	void *cmb_logical;
-	size_t cmb_size;
+	struct dmp_cmb cmb;
 };
 
 struct drm_dev {
@@ -162,18 +156,17 @@ static int drm_open(struct inode *inode, struct file *file)
 	drm_dev = container_of(inode->i_cdev, struct drm_dev, cdev);
 	subdev = kmalloc(sizeof(*subdev), GFP_KERNEL);
 	if (!subdev) {
+		pr_err(DRM_DEV_NAME ": Failed to allocate sub device data.\n");
 		ret = -ENOMEM;
 		goto drm_open_fail;
 	}
 
 	*subdev = drm_dev->subdev[minor];
-	subdev->cmb_logical = dma_alloc_coherent(
-		drm_dev->dev, PAGE_SIZE, &subdev->cmb_physical, GFP_KERNEL);
-	if (!subdev->cmb_logical) {
+	if (dv_cmb_init(drm_dev->dev, &subdev->cmb) != 0) {
+		pr_err(DRM_DEV_NAME ": Failed to allocate command buffer.\n");
 		ret = -ENOMEM;
 		kfree(subdev);
 	}
-	subdev->cmb_size = 0;
 
 	file->private_data = subdev;
 
@@ -187,8 +180,7 @@ static int drm_release(struct inode *inode, struct file *file)
 	struct dmp_dev *subdev;
 	drm_dev = container_of(inode->i_cdev, struct drm_dev, cdev);
 	subdev = file->private_data;
-	dma_free_coherent(drm_dev->dev, PAGE_SIZE, subdev->cmb_logical,
-			  subdev->cmb_physical);
+	dv_cmb_finalize(drm_dev->dev, &subdev->cmb);
 	kfree(subdev);
 	return 0;
 }
@@ -196,6 +188,9 @@ static int drm_release(struct inode *inode, struct file *file)
 static long drm_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
 	long ret = 0;
+	struct inode *inode = file->f_path.dentry->d_inode;
+	struct drm_dev *drm_dev = container_of(inode->i_cdev,
+	                                       struct drm_dev, cdev);
 	struct dmp_dev *subdev = file->private_data;
 	dmp_dv_kcmd cmd_info;
 
@@ -206,11 +201,12 @@ static long drm_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		if (copy_from_user(&cmd_info, (void __user *)arg,
 				   _IOC_SIZE(cmd)))
 			return -EFAULT;
-		dv_convert_command(subdev, &cmd_info);
+		ret = dv_convert_command(drm_dev->dev, &subdev->cmb, &cmd_info);
 		break;
 	case DMP_DV_IOC_RUN:
 		break;
 	case DMP_DV_IOC_WAIT:
+		wait_int(subdev);
 		break;
 	case DMP_DV_IOC_GET_KICK_COUNT:
 		break;
@@ -263,7 +259,7 @@ int drm_register_chrdev(struct drm_dev *drm_dev)
 	for (i = 0; i < DRM_NUM_SUBDEV; i++) {
 		// Create device:
 		dev = device_create(dddrm_class, NULL, MKDEV(driver_major, i),
-				    drm_dev, DRM_DEV_NAME "%s", subdev_name[i]);
+				    drm_dev, "dv_%s", subdev_name[i]);
 		if (IS_ERR(dev)) {
 			err = PTR_ERR(dev);
 			dev_err(drm_dev->dev, "device_create fail %d\n", i);
@@ -358,7 +354,7 @@ static int drm_dev_probe(struct platform_device *pdev)
 	drm_dev->dev = &pdev->dev;
 
 	if (dma_set_mask_and_coherent(drm_dev->dev, DMA_BIT_MASK(32))) {
-		printk(KERN_INFO "==>dmp-dv: no suitable DMA available(?!?)\n");
+		pr_err(DRM_DEV_NAME ": No suitable DMA available.\n");
 		err = -ENOMEM;
 		goto fail_dma_set_mask;
 	}
@@ -395,8 +391,6 @@ static int drm_dev_probe(struct platform_device *pdev)
 
 		drm_dev->subdev[i].init_done = 0;
 		drm_dev->subdev[i].int_status = 0;
-		drm_dev->subdev[i].cmb_physical = 0;
-		drm_dev->subdev[i].cmb_logical = 0;
 	}
 
 	err = drm_register_chrdev(drm_dev);
