@@ -18,7 +18,7 @@
 #define DRM_NUM_SUBDEV 2
 
 #ifdef DMP_ZC706
-//#define USE_DEVTREE
+#define USE_DEVTREE
 // map {0=CNV,1=FC} to irq Offset:
 #ifdef USE_DEVTREE
 static int sd2i_map[2] = { 0, 2 };
@@ -364,7 +364,7 @@ static int drm_dev_probe(struct platform_device *pdev)
 	}
 
 #ifdef USE_DEVTREE
-	devNode = of_find_compatible_node(NULL, NULL, "dmp-dv,dmp-dv");
+	devNode = of_find_compatible_node(NULL, NULL, "DMP_drm,DMP_drm");
 	if (devNode == NULL) {
 		err = -ENODEV;
 		dev_err(&pdev->dev, "no compatible node!\n");
