@@ -60,6 +60,7 @@ static const char *subdev_name[2] = { "conv", "fc" };
 #include <linux/ioctl.h>
 #include <linux/mm.h>
 #include <linux/sched.h>
+#include <linux/dma-mapping.h>
 #ifdef USE_DEVTREE
 #include <linux/of.h>
 #include <linux/of_irq.h>
@@ -81,7 +82,7 @@ struct dmp_dev {
 	unsigned int bar_size;
 	void *bar_logical;
 
-	struct dmp_cmb cmb;
+	struct dmp_cmb *cmb;
 };
 
 struct drm_dev {
@@ -165,11 +166,15 @@ static int drm_open(struct inode *inode, struct file *file)
 	if (dv_cmb_init(drm_dev->dev, &subdev->cmb) != 0) {
 		pr_err(DRM_DEV_NAME ": Failed to allocate command buffer.\n");
 		ret = -ENOMEM;
-		kfree(subdev);
+		goto drm_allocate_cmb_fail;
 	}
 
 	file->private_data = subdev;
+	
+	return 0;
 
+drm_allocate_cmb_fail:
+	kfree(subdev);
 drm_open_fail:
 	return ret;
 }
@@ -180,7 +185,7 @@ static int drm_release(struct inode *inode, struct file *file)
 	struct dmp_dev *subdev;
 	drm_dev = container_of(inode->i_cdev, struct drm_dev, cdev);
 	subdev = file->private_data;
-	dv_cmb_finalize(drm_dev->dev, &subdev->cmb);
+	dv_cmb_finalize(drm_dev->dev, subdev->cmb);
 	kfree(subdev);
 	return 0;
 }
@@ -189,10 +194,11 @@ static long drm_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
 	long ret = 0;
 	struct inode *inode = file->f_path.dentry->d_inode;
-	struct drm_dev *drm_dev = container_of(inode->i_cdev,
-	                                       struct drm_dev, cdev);
+	struct drm_dev *drm_dev =
+		container_of(inode->i_cdev, struct drm_dev, cdev);
 	struct dmp_dev *subdev = file->private_data;
 	dmp_dv_kcmd cmd_info;
+	__u32 kick_count;
 
 	switch (cmd) {
 	case DMP_DV_IOC_APPEND_CMD:
@@ -201,14 +207,19 @@ static long drm_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		if (copy_from_user(&cmd_info, (void __user *)arg,
 				   _IOC_SIZE(cmd)))
 			return -EFAULT;
-		ret = dv_convert_command(drm_dev->dev, &subdev->cmb, &cmd_info);
+		ret = dv_convert_command(drm_dev->dev, subdev->cmb, &cmd_info);
 		break;
 	case DMP_DV_IOC_RUN:
+		dv_run_command(subdev->cmb, subdev->bar_logical);
 		break;
 	case DMP_DV_IOC_WAIT:
 		wait_int(subdev);
 		break;
 	case DMP_DV_IOC_GET_KICK_COUNT:
+		kick_count = ioread32(REG_IO_ADDR(subdev, 0x0100));
+		if (copy_to_user((void __user *)arg, &kick_count,
+		                 _IOC_SIZE(cmd)))
+			return -EFAULT;
 		break;
 	default:
 		break;
@@ -289,6 +300,7 @@ int drm_register_chrdev(struct drm_dev *drm_dev)
 		// initialize:
 		init_waitqueue_head(&(drm_dev->subdev[i].int_status_wait));
 		spin_lock_init(&(drm_dev->subdev[i].int_exclusive));
+		drm_dev->subdev[i].cmb = NULL;
 		drm_dev->subdev[i].init_done = 1;
 	}
 

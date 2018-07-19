@@ -23,7 +23,7 @@
 
 /// @brief Memory buffer specification.
 typedef struct dmp_dv_kbuf_impl {
-	__u32 fd;    // ION file descriptor
+	__s32 fd;    // ION file descriptor
 	__u32 rsvd;  // padding to 64-bit size
 	__u64 offs;  // offset from the start of the buffer
 } dmp_dv_kbuf;

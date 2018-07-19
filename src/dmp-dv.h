@@ -19,23 +19,17 @@
 #ifndef _DMP_DV_H
 #define _DMP_DV_H
 
-#include <linux/dma-mapping.h>
-
 #define DRM_DEV_NAME "dmp_dv"
 #define DRM_NUM_SUBDEV 2
 
 struct device;
 struct dmp_dv_kcmd_impl;
+struct dmp_cmb;
 
-struct dmp_cmb {
-	dma_addr_t physical;
-	void *logical;
-	size_t size;
-};
-
-int dv_cmb_init(struct device *dev, struct dmp_cmb *cmb);
+int dv_cmb_init(struct device *dev, struct dmp_cmb **cmb);
 void dv_cmb_finalize(struct device *dev, struct dmp_cmb *cmb);
 int dv_convert_command(struct device *dev, struct dmp_cmb *cmb,
-                       struct dmp_dv_kcmd_impl *cmd_info);
+		       struct dmp_dv_kcmd_impl *cmd_info);
+void dv_run_command(struct dmp_cmb *cmb, void *bar_logical);
 
 #endif
