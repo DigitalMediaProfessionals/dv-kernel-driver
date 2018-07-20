@@ -61,6 +61,8 @@ static const char *subdev_name[2] = { "conv", "fc" };
 #include <linux/mm.h>
 #include <linux/sched.h>
 #include <linux/dma-mapping.h>
+#include <linux/sysfs.h>
+#include <linux/mutex.h>
 #ifdef USE_DEVTREE
 #include <linux/of.h>
 #include <linux/of_irq.h>
@@ -94,6 +96,7 @@ struct drm_dev {
 };
 
 static struct class *dddrm_class = NULL;
+static DEFINE_MUTEX(dv_firmware_lock);
 
 static irqreturn_t handle_int_conv(int irq, void *dev_id)
 {
@@ -346,6 +349,52 @@ int drm_unregister_chrdev(struct drm_dev *drm_dev)
 	return 0;
 }
 
+ssize_t drm_firmware_write(struct file *filp, struct kobject *kobj,
+			   struct bin_attribute *bin_attr,
+			   char *buf, loff_t pos, size_t count)
+{
+	struct dmp_dev *subdev = bin_attr->private;
+	unsigned int offset = pos / 4;
+	unsigned int len = count / 4;
+	uint32_t *f_buf = (uint32_t*)buf;
+	
+	if (!subdev)
+		return -ENODEV;
+	
+	if ((pos + count) > DRM_MAX_FIRMWARE_SIZE)
+		return -EINVAL;
+	
+	pr_info(DRM_DEV_NAME ": Updating firmware 0x%04x..0x%04x.\n",
+		(unsigned int)pos, (unsigned int)(pos + count));
+	
+	mutex_lock(&dv_firmware_lock);
+
+	iowrite32(offset, REG_IO_ADDR(subdev, 0x80));
+	while (len--) {
+		iowrite32(*f_buf, REG_IO_ADDR(subdev, 0x84));
+		++f_buf;
+	}
+	
+	mutex_unlock(&dv_firmware_lock);
+	
+	return count;
+}			       
+
+static struct bin_attribute drm_firmware_attr = {
+	.attr =
+		{
+			.name = "firmware",
+			.mode = S_IWUSR,
+		},
+	.size = DRM_MAX_FIRMWARE_SIZE,
+	.write = drm_firmware_write,
+};
+
+static struct bin_attribute *drm_bin_attrs[] = {
+	&drm_firmware_attr,
+	NULL
+};
+
 static int drm_dev_probe(struct platform_device *pdev)
 {
 	int i = 0, err = 0;
@@ -355,7 +404,8 @@ static int drm_dev_probe(struct platform_device *pdev)
 #endif
 
 	dev_dbg(&pdev->dev, "probe begin\n");
-	drm_dev = kzalloc(sizeof(struct drm_dev), GFP_KERNEL);
+
+	drm_dev = devm_kzalloc(&pdev->dev, sizeof(struct drm_dev), GFP_KERNEL);
 	if (!drm_dev) {
 		err = -ENOMEM;
 		dev_err(&pdev->dev, "kzalloc fail\n");
@@ -405,6 +455,9 @@ static int drm_dev_probe(struct platform_device *pdev)
 		drm_dev->subdev[i].int_status = 0;
 	}
 
+	// set firmware private attribute to conv subdev
+	drm_firmware_attr.private = &drm_dev->subdev[0];
+	
 	err = drm_register_chrdev(drm_dev);
 	if (err) {
 		dev_err(&pdev->dev, "register chrdev fail\n");
@@ -448,7 +501,6 @@ static int drm_dev_remove(struct platform_device *pdev)
 		}
 
 		platform_set_drvdata(pdev, NULL);
-		kfree(drm_dev);
 	}
 
 	dev_dbg(&pdev->dev, "remove successful\n");
@@ -470,6 +522,16 @@ static void drm_dev_release(struct device *dev)
 }
 
 static u64 drm_dma_mask;
+
+static const struct attribute_group drm_attr_group = {
+	.bin_attrs = drm_bin_attrs,
+};
+
+static const struct attribute_group *drm_attr_groups[] = {
+	&drm_attr_group,
+	NULL
+};
+
 static struct platform_device drm_platform_device = {
 	.name = DRM_DEV_NAME,
 	.id = -1,
@@ -478,6 +540,7 @@ static struct platform_device drm_platform_device = {
 	.dev =
 		{
 			.dma_mask = &drm_dma_mask,
+			.groups = drm_attr_groups,
 			.release = drm_dev_release,
 		},
 };
