@@ -391,17 +391,17 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 	}
 
 	ret = get_dma_addr(dev, cmb, &cmd->input_buf, 0, &input_base_addr);
-	if (!ret) {
+	if (ret) {
 		vfree(cmd);
 		return ret;
 	}
 	ret = get_dma_addr(dev, cmb, &cmd->output_buf, 0, &output_base_addr);
-	if (!ret) {
+	if (ret) {
 		vfree(cmd);
 		return ret;
 	}
 	ret = get_dma_addr(dev, cmb, &cmd->eltwise_buf, 0, &eltwise_base_addr);
-	if (!ret) {
+	if (ret) {
 		vfree(cmd);
 		return ret;
 	}
@@ -435,9 +435,9 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 	conv->output.output_mode = cmd->output_mode;
 
 	for (i = 0; i < runs; ++i) {
-		ret = get_dma_addr(dev, cmb, &cmd->run[i].weight_buf, 0,
+		ret = get_dma_addr(dev, cmb, &cmd->run[i].weight_buf, 1,
 		                   &weight_base_addr);
-		if (!ret) {
+		if (ret) {
 			vfree(cmd);
 			return ret;
 		}
@@ -484,7 +484,7 @@ int dv_convert_command(struct device *dev, struct dmp_cmb *cmb,
 		switch (cmd.version) {
 		case 0:
 			ret = dv_convert_conv_v0(dev, cmb, user_cmds, cmd.size);
-			if (!ret)
+			if (ret)
 				return ret;
 			break;
 		default:
@@ -506,6 +506,7 @@ void dv_run_command(struct dmp_cmb *cmb, void *bar_logical)
 	cmd_buf[0] = 0x0108f004; // Write one word to 0x108
 	cmd_buf[1] = 0x00000001; // Set interrupt register
 	cmb->size += sizeof(uint32_t) * 2;
+
 	barrier();
 	
 	iowrite32(cmb->physical, REG_IO_ADDR(bar_logical, 0x0400));

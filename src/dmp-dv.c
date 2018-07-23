@@ -354,7 +354,6 @@ ssize_t drm_firmware_write(struct file *filp, struct kobject *kobj,
 			   char *buf, loff_t pos, size_t count)
 {
 	struct dmp_dev *subdev = bin_attr->private;
-	unsigned int offset = pos / 4;
 	unsigned int len = count / 4;
 	uint32_t *f_buf = (uint32_t*)buf;
 	
@@ -369,7 +368,7 @@ ssize_t drm_firmware_write(struct file *filp, struct kobject *kobj,
 	
 	mutex_lock(&dv_firmware_lock);
 
-	iowrite32(offset, REG_IO_ADDR(subdev, 0x80));
+	iowrite32(pos, REG_IO_ADDR(subdev, 0x80));
 	while (len--) {
 		iowrite32(*f_buf, REG_IO_ADDR(subdev, 0x84));
 		++f_buf;
@@ -457,6 +456,9 @@ static int drm_dev_probe(struct platform_device *pdev)
 
 	// set firmware private attribute to conv subdev
 	drm_firmware_attr.private = &drm_dev->subdev[0];
+	
+	// Enable command list
+	iowrite32(1, REG_IO_ADDR((&drm_dev->subdev[0]), 0x40C));
 	
 	err = drm_register_chrdev(drm_dev);
 	if (err) {
