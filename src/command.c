@@ -77,7 +77,7 @@ struct conv_run {
 	uint16_t conv_stride; // bits [7:0] = X stride, bits [15:8] = Y stride
 	uint16_t conv_dilation; // bits [7:0] = X dilation, bits [15:8] = Y dilation
 	uint32_t weight_base_addr; // Filter Weight and Bias byte address
-	uint16_t weight_fmt; // Weight format (0 = random access blocks, 1 = compact stream, 2 = 8-bit qunatized stream)
+	uint16_t weight_fmt; // Weight format (0 = random access blocks, 1 = compact stream, 3 = 8-bit qunatized stream)
 	uint16_t align_0;
 	// POOL
 	uint16_t pool_enable; // 0 = disabled, 1 = max pooling, 2 = average pooling, 3 = max pooling with argmax, 4 = upsample, 5 = unpool with argmax
