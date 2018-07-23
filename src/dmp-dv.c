@@ -445,6 +445,9 @@ static int drm_dev_probe(struct platform_device *pdev)
 	// set firmware private attribute to conv subdev
 	drm_firmware_attr.private = &drm_dev->subdev[0];
 	
+	// Set conv to command list mode
+	iowrite32(1, REG_IO_ADDR((&drm_dev->subdev[0]), 0x40C));
+	
 	err = drm_register_chrdev(drm_dev);
 	if (err) {
 		dev_err(&pdev->dev, "register chrdev fail\n");
