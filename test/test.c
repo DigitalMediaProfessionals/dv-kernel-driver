@@ -41,6 +41,50 @@ dmp_dv_kcmdraw_v0 cmd0 = {
         },
 };
 
+dmp_dv_kcmdraw_v0 cmd1 = {
+    .size = CMD_SIZE(2),
+    .version = 0,
+    .topo = 0x3,
+    .w = 8,
+    .h = 8,
+    .z = 1,
+    .c = 8,
+    .output_mode = 0,
+    .run =
+        {
+            [0] =
+                {
+                    .conv_pad = 0x01010101,
+                    .pool_pad = 0,
+                    .m = 8,
+                    .conv_enable = 1,
+                    .p = 3,
+                    .pz = 1,
+                    .conv_stride = 0x0101,
+                    .weight_fmt = 1,
+                    .pool_enable = 0,
+                    .actfunc = 0,
+                    .rectifi_en = 0,
+                    .lrn = 0,
+                },
+            [1] =
+                {
+                    .conv_pad = 0x01010101,
+                    .pool_pad = 0,
+                    .m = 8,
+                    .conv_enable = 1,
+                    .p = 3,
+                    .pz = 1,
+                    .conv_stride = 0x0101,
+                    .weight_fmt = 1,
+                    .pool_enable = 0,
+                    .actfunc = 0,
+                    .rectifi_en = 0,
+                    .lrn = 0,
+                },
+        },
+};
+
 static int allocate_ion_buf(int fd, uint32_t mask, size_t size) {
   struct ion_allocation_data ion_alloc;
   
@@ -99,7 +143,7 @@ int main(void) {
   }
   
   // allocate buffers
-  cmd0.input_buf.fd = allocate_ion_buf(ionfd, ion_heap_id_mask, 8 * 8 * 8 * 4);
+  cmd0.input_buf.fd = allocate_ion_buf(ionfd, ion_heap_id_mask, 8 * 8 * 8 * 8);
   if (cmd0.input_buf.fd < 0) {
     printf("Failed to allocate ion buffer!\n");
     return -1;
@@ -113,6 +157,23 @@ int main(void) {
     printf("Failed to allocate ion buffer!\n");
     return -1;
   }
+  cmd1.input_buf.fd = cmd0.input_buf.fd;
+  cmd1.input_buf.offs = 8 * 8 * 8 * 4;
+  cmd1.output_buf.fd = cmd0.input_buf.fd;
+  cmd1.output_buf.offs = 8 * 8 * 8 * 6;
+  cmd1.eltwise_buf.fd = -1;
+  cmd1.run[0].weight_buf.fd = allocate_ion_buf(ionfd, ion_heap_id_mask,
+    3 * 3 * 8 * 8 * 2 + 8 * 2);
+  if (cmd1.run[0].weight_buf.fd < 0) {
+    printf("Failed to allocate ion buffer!\n");
+    return -1;
+  }
+  cmd1.run[1].weight_buf.fd = allocate_ion_buf(ionfd, ion_heap_id_mask,
+    3 * 3 * 8 * 8 * 2 + 8 * 2);
+  if (cmd1.run[1].weight_buf.fd < 0) {
+    printf("Failed to allocate ion buffer!\n");
+    return -1;
+  }
   
   // kick command
   ret = ioctl(dvfd, DMP_DV_IOC_GET_KICK_COUNT, &kick_count);
@@ -122,13 +183,17 @@ int main(void) {
   }
   printf("Conv kick count before kick = %d.\n", kick_count);
   
-  dv_cmd.cmd_num = 1;
-  dv_cmd.cmd_pointer = (__u64)&cmd0;
+  dv_cmd.cmd_num = 2;
+  void *cmds = malloc(cmd0.size + cmd1.size);
+  memcpy(cmds, &cmd0, cmd0.size);
+  memcpy(cmds + cmd0.size, &cmd1, cmd1.size);
+  dv_cmd.cmd_pointer = (__u64)cmds;
   ret = ioctl(dvfd, DMP_DV_IOC_APPEND_CMD, &dv_cmd);
   if (ret < 0) {
     printf("Failed to append command!\n");
     return -1;
   }
+  free(cmds);
   
   ret = ioctl(dvfd, DMP_DV_IOC_RUN, NULL);
   if (ret < 0) {
