@@ -38,6 +38,7 @@ static unsigned int sd2rb[2] = { 0xff210000, 0xff200000 };
 #endif
 // map {0=CNV,1=FC} to regSize:
 static unsigned int sd2rs[2] = { 0x2000, 0x100 };
+static int irq_addr[2] = { 0x420, 0x20 };
 
 static const char *subdev_name[2] = { "conv", "fc" };
 
@@ -73,17 +74,21 @@ static const char *subdev_name[2] = { "conv", "fc" };
 
 #define REG_IO_ADDR(DV, OF) ((void __iomem *)(DV->bar_logical) + OF)
 
-struct dmp_dev {
+struct dmp_irq {
 	spinlock_t int_exclusive;
 	wait_queue_head_t int_status_wait;
 	int irqno;
 	int init_done;
 	int int_status;
+};
 
+struct dmp_dev {
 	unsigned int bar_physical;
 	unsigned int bar_size;
 	void *bar_logical;
+	int irq_addr;
 
+	struct dmp_irq *irq;
 	struct dmp_cmb *cmb;
 };
 
@@ -93,60 +98,50 @@ struct drm_dev {
 	struct cdev cdev;
 
 	struct dmp_dev subdev[DRM_NUM_SUBDEV];
+	struct dmp_irq subirq[DRM_NUM_SUBDEV];
 };
 
 static struct class *dddrm_class = NULL;
 static DEFINE_MUTEX(dv_firmware_lock);
 
-static irqreturn_t handle_int_conv(int irq, void *dev_id)
+static irqreturn_t handle_int(int irq, void *dev_id)
 {
 	struct dmp_dev *subdev = dev_id;
+	struct dmp_irq *subirq = subdev->irq;
 
-	spin_lock(&subdev->int_exclusive);
-	iowrite32(0, REG_IO_ADDR(subdev, 0x420));
+	spin_lock(&subirq->int_exclusive);
+	iowrite32(0, REG_IO_ADDR(subdev, subdev->irq_addr));
 
-	subdev->int_status = 2;
-	wake_up_interruptible(&subdev->int_status_wait);
-	spin_unlock(&subdev->int_exclusive);
+	subirq->int_status = 2;
+	wake_up_interruptible(&subirq->int_status_wait);
+	spin_unlock(&subirq->int_exclusive);
 
 	return IRQ_HANDLED;
 }
 
-static irqreturn_t handle_int_fc(int irq, void *dev_id)
-{
-	struct dmp_dev *subdev = dev_id;
-
-	spin_lock(&subdev->int_exclusive);
-	iowrite32(0, REG_IO_ADDR(subdev, 0x20));
-
-	subdev->int_status = 2;
-	wake_up_interruptible(&subdev->int_status_wait);
-	spin_unlock(&subdev->int_exclusive);
-
-	return IRQ_HANDLED;
-}
-
-static void wait_int(struct dmp_dev *subdev)
+static int wait_int(struct dmp_irq *subirq)
 {
 	long ret = 0;
 	int wStat = 0;
 	unsigned long irq_save = 0;
 
-	spin_lock(&subdev->int_exclusive);
-	wStat = subdev->int_status;
-	subdev->int_status = (wStat == 2) ? 0 : 1;
-	spin_unlock(&subdev->int_exclusive);
+	spin_lock(&subirq->int_exclusive);
+	wStat = subirq->int_status;
+	subirq->int_status = (wStat == 2) ? 0 : 1;
+	spin_unlock(&subirq->int_exclusive);
 
 	if (wStat != 2) {
-		ret = wait_event_interruptible(subdev->int_status_wait,
-					       (subdev->int_status & 2));
+		ret = wait_event_interruptible(subirq->int_status_wait,
+					       (subirq->int_status & 2));
 		if (!ret) {
-			spin_lock_irqsave(&subdev->int_exclusive, irq_save);
-			subdev->int_status = 0;
-			spin_unlock_irqrestore(&subdev->int_exclusive,
+			spin_lock_irqsave(&subirq->int_exclusive, irq_save);
+			subirq->int_status = 0;
+			spin_unlock_irqrestore(&subirq->int_exclusive,
 					       irq_save);
 		}
 	}
+
+	return ret;
 }
 
 static int drm_open(struct inode *inode, struct file *file)
@@ -213,10 +208,11 @@ static long drm_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		ret = dv_convert_command(drm_dev->dev, subdev->cmb, &cmd_info);
 		break;
 	case DMP_DV_IOC_RUN:
+		// TODO: use work queue
 		dv_run_command(subdev->cmb, subdev->bar_logical);
 		break;
 	case DMP_DV_IOC_WAIT:
-		wait_int(subdev);
+		ret = wait_int(subdev->irq);
 		break;
 	case DMP_DV_IOC_GET_KICK_COUNT:
 		kick_count = ioread32(REG_IO_ADDR(subdev, 0x0100));
@@ -280,19 +276,9 @@ int drm_register_chrdev(struct drm_dev *drm_dev)
 			goto fail_device_init;
 		}
 
-		rIRQ = drm_dev->subdev[i].irqno;
-		if (i == 0) {
-			if (!err)
-				err = request_irq(rIRQ, handle_int_conv,
-						  IRQF_SHARED, DRM_DEV_NAME,
-						  &(drm_dev->subdev[i]));
-		} else {
-			if (!err)
-				err = request_irq(rIRQ, handle_int_fc,
-						  IRQF_SHARED, DRM_DEV_NAME,
-						  &(drm_dev->subdev[i]));
-		}
-
+		rIRQ = drm_dev->subirq[i].irqno;
+		err = request_irq(rIRQ, handle_int, IRQF_SHARED, DRM_DEV_NAME,
+				  &(drm_dev->subdev[i]));
 		if (err) {
 			device_destroy(dddrm_class, MKDEV(driver_major, i));
 			dev_err(drm_dev->dev,
@@ -301,21 +287,22 @@ int drm_register_chrdev(struct drm_dev *drm_dev)
 		}
 
 		// initialize:
-		init_waitqueue_head(&(drm_dev->subdev[i].int_status_wait));
-		spin_lock_init(&(drm_dev->subdev[i].int_exclusive));
+		init_waitqueue_head(&(drm_dev->subirq[i].int_status_wait));
+		spin_lock_init(&(drm_dev->subirq[i].int_exclusive));
+		drm_dev->subirq[i].init_done = 1;
+		drm_dev->subdev[i].irq = &drm_dev->subirq[i];
 		drm_dev->subdev[i].cmb = NULL;
-		drm_dev->subdev[i].init_done = 1;
 	}
 
 	return 0;
 
 fail_device_init:
 	for (i = 0; i < DRM_NUM_SUBDEV; i++) {
-		if (drm_dev->subdev[i].init_done) {
-			free_irq(drm_dev->subdev[i].irqno,
+		if (drm_dev->subirq[i].init_done) {
+			free_irq(drm_dev->subirq[i].irqno,
 				 &(drm_dev->subdev[i]));
 			device_destroy(dddrm_class, MKDEV(driver_major, i));
-			drm_dev->subdev[i].init_done = 0;
+			drm_dev->subirq[i].init_done = 0;
 		}
 	}
 	cdev_del(&drm_dev->cdev);
@@ -335,11 +322,11 @@ int drm_unregister_chrdev(struct drm_dev *drm_dev)
 	dev_dbg(drm_dev->dev, "drm_unregister_chrdev\n");
 
 	for (i = 0; i < DRM_NUM_SUBDEV; i++) {
-		if (drm_dev->subdev[i].init_done) {
-			free_irq(drm_dev->subdev[i].irqno,
+		if (drm_dev->subirq[i].init_done) {
+			free_irq(drm_dev->subirq[i].irqno,
 				 &(drm_dev->subdev[i]));
 			device_destroy(dddrm_class, MKDEV(driver_major, i));
-			drm_dev->subdev[i].init_done = 0;
+			drm_dev->subirq[i].init_done = 0;
 		}
 	}
 
@@ -433,10 +420,10 @@ static int drm_dev_probe(struct platform_device *pdev)
 
 	for (i = 0; i < DRM_NUM_SUBDEV; i++) {
 #ifdef USE_DEVTREE
-		drm_dev->subdev[i].irqno = of_irq_get(devNode, sd2i_map[i]);
+		drm_dev->subirq[i].irqno = of_irq_get(devNode, sd2i_map[i]);
 // NOTE: we could(should) get the reg. address by this method too ...
 #else
-		drm_dev->subdev[i].irqno = sd2i_map[i];
+		drm_dev->subirq[i].irqno = sd2i_map[i];
 #endif
 
 		drm_dev->subdev[i].bar_physical = sd2rb[i];
@@ -449,16 +436,14 @@ static int drm_dev_probe(struct platform_device *pdev)
 			dev_err(&pdev->dev, "ioremap_nocache fail %d\n", i);
 			goto fail_get_iomap;
 		}
+		drm_dev->subdev[i].irq_addr = irq_addr[i];
 
-		drm_dev->subdev[i].init_done = 0;
-		drm_dev->subdev[i].int_status = 0;
+		drm_dev->subirq[i].init_done = 0;
+		drm_dev->subirq[i].int_status = 0;
 	}
 
 	// set firmware private attribute to conv subdev
 	drm_firmware_attr.private = &drm_dev->subdev[0];
-	
-	// Enable command list
-	iowrite32(1, REG_IO_ADDR((&drm_dev->subdev[0]), 0x40C));
 	
 	err = drm_register_chrdev(drm_dev);
 	if (err) {
