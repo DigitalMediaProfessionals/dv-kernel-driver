@@ -99,16 +99,13 @@ int main(void) {
   }
   
   // allocate buffers
-  cmd0.input_buf.fd = allocate_ion_buf(ionfd, ion_heap_id_mask, 8 * 8 * 8 * 2);
+  cmd0.input_buf.fd = allocate_ion_buf(ionfd, ion_heap_id_mask, 8 * 8 * 8 * 4);
   if (cmd0.input_buf.fd < 0) {
     printf("Failed to allocate ion buffer!\n");
     return -1;
   }
-  cmd0.output_buf.fd = allocate_ion_buf(ionfd, ion_heap_id_mask, 8 * 8 * 8 * 2);
-  if (cmd0.output_buf.fd < 0) {
-    printf("Failed to allocate ion buffer!\n");
-    return -1;
-  }
+  cmd0.output_buf.fd = cmd0.input_buf.fd;
+  cmd0.output_buf.offs = 8 * 8 * 8 * 2;
   cmd0.eltwise_buf.fd = -1;
   cmd0.run[0].weight_buf.fd = allocate_ion_buf(ionfd, ion_heap_id_mask,
     3 * 3 * 8 * 8 * 2 + 8 * 2);
