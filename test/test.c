@@ -158,9 +158,9 @@ int main(void) {
     return -1;
   }
   cmd1.input_buf.fd = cmd0.input_buf.fd;
-  cmd1.input_buf.offs = 8 * 8 * 8 * 4;
+  cmd1.input_buf.offs = 8 * 8 * 8 * 2;
   cmd1.output_buf.fd = cmd0.input_buf.fd;
-  cmd1.output_buf.offs = 8 * 8 * 8 * 6;
+  cmd1.output_buf.offs = 8 * 8 * 8 * 4;
   cmd1.eltwise_buf.fd = -1;
   cmd1.run[0].weight_buf.fd = allocate_ion_buf(ionfd, ion_heap_id_mask,
     3 * 3 * 8 * 8 * 2 + 8 * 2);
@@ -191,6 +191,16 @@ int main(void) {
   ret = ioctl(dvfd, DMP_DV_IOC_APPEND_CMD, &dv_cmd);
   if (ret < 0) {
     printf("Failed to append command!\n");
+    return -1;
+  }
+
+  // set the offset to cause overflow and test if it can be caught.
+  cmd1.input_buf.offs = 8 * 8 * 8 * 4;
+  cmd1.output_buf.offs = 8 * 8 * 8 * 6;
+  memcpy(cmds + cmd0.size, &cmd1, cmd1.size);
+  ret = ioctl(dvfd, DMP_DV_IOC_APPEND_CMD, &dv_cmd);
+  if (ret >= 0) {
+    printf("Buffer overflow command not caught by kernel!\n");
     return -1;
   }
   free(cmds);

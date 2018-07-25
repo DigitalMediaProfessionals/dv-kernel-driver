@@ -35,6 +35,7 @@ struct dmp_dmabuf_hash_entry {
 	struct dma_buf_attachment *attachment;
 	struct sg_table *sgt;
 	dma_addr_t dma_addr;
+	unsigned int buf_size;
 	struct hlist_node hash_node;
 };
 
@@ -99,6 +100,14 @@ struct conv_configuration {
 	struct conv_run run[MAX_NUM_RUNS];
 };
 
+struct conv_data_size {
+	int32_t w; // Width
+	int32_t h; // Height
+	int32_t z; // Depth
+	int32_t c; // Channels
+	uint32_t size; // Total Size = w * h * z * c * sizeof(float16)
+};
+
 int dv_cmb_init(struct device *dev, struct dmp_cmb **cmb)
 {
 	*cmb = kzalloc(sizeof(**cmb), GFP_KERNEL);
@@ -136,171 +145,9 @@ void dv_cmb_finalize(struct device *dev, struct dmp_cmb *cmb)
 	kfree(cmb);
 }
 
-static unsigned int topo_num_runs(unsigned int i)
-{
-	unsigned int n = 0;
-	for (; i; i >>= 1, n++)
-		; // Faster for low n...
-	return n;
-}
-
-// Size of the configuration struct in bytes (unused run structs not counted)
-static size_t conf_size(unsigned int topo)
-{
-	unsigned int n = topo_num_runs(topo);
-	return sizeof(struct conv_configuration) -
-	       (MAX_NUM_RUNS - n) * sizeof(struct conv_run);
-}
-
-#if 0
-// TODO: Need to update the implementation.
-/**************************************
- *
- * Command buffer size verification
- *
- **************************************/
-#define CONV_C_SUB 8
-#define CONV_M_SUB 8
-
-struct conv_data_size {
-	unsigned short w; // Width
-	unsigned short h; // Height
-	unsigned short z; // Depth
-	unsigned short c; // Channels
-	unsigned int size; // Total Size = w * h * z * c
-};
-
-struct tb_data_size {
-	unsigned int i_buf;
-	unsigned int o_buf;
-	unsigned int w_bank;
-	unsigned int w[MAX_NUM_RUNS]; // Filter sizes
-	unsigned int b[MAX_NUM_RUNS]; // Bias sizes
-	struct conv_data_size co[MAX_NUM_RUNS]; // convolution out sizes
-	struct conv_data_size po[MAX_NUM_RUNS]; // pool out sizes
-	struct conv_data_size i;
-	struct conv_data_size o;
-};
-
-static void tb_data_size_clear(struct tb_data_size *tbs)
-{
-	int i;
-	tbs->i_buf = 0;
-	tbs->o_buf = 0;
-	tbs->w_bank = 0;
-	for (i = 0; i < MAX_NUM_RUNS; i++) {
-		tbs->w[i] = 0;
-		tbs->b[i] = 0;
-	}
-}
-
-static void conv_output_size_calc(struct conv_run *run, struct conv_data_size *in_size,
-			   struct conv_data_size *out_size,
-			   struct tb_data_size *tb_size, int run_num)
-{
-	short in_w = in_size->w;
-	short in_h = in_size->h;
-	short in_z = in_size->z;
-	short in_c = in_size->c;
-	short t0_w;
-	short t0_h;
-	short t0_z;
-	short t0_c;
-	// Convolution
-	if (run->conv_enable) { // Convolution
-		short m = run->m;
-		short p = run->p;
-		short px = p & 0xFF;
-		short py = p >> 8;
-		short pz = run->pz & 0x7F;
-		unsigned int conv_pad = run->conv_pad;
-		unsigned short conv_stride = run->conv_stride;
-		int pad_w0 = conv_pad & 0xff;
-		int pad_w1 = (conv_pad >> 8) & 0xff;
-		int pad_h0 = (conv_pad >> 16) & 0xff;
-		int pad_h1 = (conv_pad >> 24) & 0xff;
-		int stride_w = conv_stride & 0xff;
-		int stride_h = (conv_stride >> 8) & 0xff;
-		int core_w = pad_w0 + in_w + pad_w1;
-		int core_h = pad_h0 + in_h + pad_h1;
-		int i_buf_size, o_buf_size, w_bank_size, w_size;
-		if (py == 0)
-			py = px;
-		t0_w = (core_w - px) / stride_w + 1;
-		t0_h = (core_h - py) / stride_h + 1;
-		// NOTE: No padding or stride in Z (depth) implemented yet!
-		t0_z = (in_z - pz + 1);
-		t0_c = m; // Number of convolution output channels...
-		i_buf_size = core_w * core_h * in_z * CONV_C_SUB;
-		o_buf_size = t0_w * t0_h * t0_z * CONV_M_SUB;
-		w_bank_size = px * py * CONV_C_SUB * CONV_M_SUB;
-		if (i_buf_size > tb_size->i_buf)
-			tb_size->i_buf = i_buf_size;
-		if (o_buf_size > tb_size->o_buf)
-			tb_size->o_buf = o_buf_size;
-		if (w_bank_size > tb_size->w_bank)
-			tb_size->w_bank = w_bank_size;
-		w_size = px * py * pz * in_size->c * m;
-		tb_size->w[run_num] = w_size;
-		tb_size->b[run_num] = m;
-	} else { // Bypass of convolution
-		t0_w = in_w;
-		t0_h = in_h;
-		t0_z = in_z;
-		t0_c = in_c;
-		tb_size->w[run_num] = 0;
-		tb_size->b[run_num] = 0;
-	}
-	tb_size->co[run_num].w = t0_w;
-	tb_size->co[run_num].h = t0_h;
-	tb_size->co[run_num].z = t0_z;
-	tb_size->co[run_num].c = t0_c;
-	tb_size->co[run_num].size = t0_w * t0_h * t0_z * t0_c;
-	// Pooling
-	if (((run->pool_enable) & 0x7) != 0) {
-		unsigned short pool_size = run->pool_size;
-		int pool_size_w = pool_size & 0xff;
-		int pool_size_h = (pool_size >> 8) & 0xff;
-		unsigned int pool_pad = run->pool_pad;
-		int pool_pad_w0 = pool_pad & 0xff;
-		int pool_pad_w1 = (pool_pad >> 8) & 0xff;
-		int pool_pad_h0 = (pool_pad >> 16) & 0xff;
-		int pool_pad_h1 = (pool_pad >> 24) & 0xf;
-		unsigned short pool_stride = run->pool_stride;
-		int pool_stride_w = pool_stride & 0xff;
-		int pool_stride_h = (pool_stride >> 8) & 0xff;
-		// unpool with argmax, or upsample
-		if ((run->pool_enable == 5) || (run->pool_enable == 4)) {
-			// NOTE: only 2x2 size and 2x2 stride supported currently
-			out_size->w = 2 * t0_w;
-			out_size->h = 2 * t0_h;
-		} else {
-			out_size->w = ((pool_pad_w0 + t0_w + pool_pad_w1) -
-				       pool_size_w) / pool_stride_w + 1;
-			out_size->h = ((pool_pad_h0 + t0_h + pool_pad_h1) -
-				       pool_size_h) / pool_stride_h + 1;
-		}
-		// NOTE: No pooling in Z (depth) implemented yet!
-		out_size->z = t0_z;
-		// Number of channels preserved in pooling...
-		out_size->c = t0_c;
-	} else { // Bypass of max pooling
-		out_size->w = t0_w;
-		out_size->h = t0_h;
-		out_size->z = t0_z;
-		out_size->c = t0_c;
-	}
-	out_size->size = out_size->w * out_size->h * out_size->z * out_size->c;
-	tb_size->po[run_num].w = out_size->w;
-	tb_size->po[run_num].h = out_size->h;
-	tb_size->po[run_num].z = out_size->z;
-	tb_size->po[run_num].c = out_size->c;
-	tb_size->po[run_num].size = out_size->size;
-}
-#endif
-
 static int get_dma_addr(struct device *dev, struct dmp_cmb *cmb,
-			dmp_dv_kbuf *buf, int is_weight, uint32_t *addr)
+			dmp_dv_kbuf *buf, int is_weight, uint32_t *addr,
+			uint32_t *buf_size)
 {
 	struct dmp_dmabuf_hash_entry *obj;
 	struct scatterlist *sg;
@@ -309,6 +156,7 @@ static int get_dma_addr(struct device *dev, struct dmp_cmb *cmb,
 	// handle invalid fd
 	if (buf->fd < 0) {
 		*addr = 0xDEADBEEF;
+		*buf_size = 0;
 		return 0;
 	}
 
@@ -316,6 +164,7 @@ static int get_dma_addr(struct device *dev, struct dmp_cmb *cmb,
 	hash_for_each_possible (cmb->dmabuf_hash, obj, hash_node, buf->fd) {
 		if (obj->fd == buf->fd) {
 			*addr = obj->dma_addr + (uint32_t)buf->offs;
+			*buf_size = obj->buf_size - (uint32_t)buf->offs;
 			return 0;
 		}
 	}
@@ -350,7 +199,9 @@ static int get_dma_addr(struct device *dev, struct dmp_cmb *cmb,
 	// should only loop once
 	for_each_sg (obj->sgt->sgl, sg, obj->sgt->nents, i) {
 		obj->dma_addr = sg_dma_address(sg);
+		obj->buf_size = sg_dma_len(sg);
 		*addr = obj->dma_addr + (uint32_t)buf->offs;
+		*buf_size = obj->buf_size - (uint32_t)buf->offs;
 	}
 
 	hash_add(cmb->dmabuf_hash, &obj->hash_node, obj->fd);
@@ -368,6 +219,118 @@ dma_buf_get_fail:
 	return ret;
 }
 
+static unsigned int topo_num_runs(unsigned int i)
+{
+	unsigned int n = 0;
+	for (; i; i >>= 1, n++)
+		; // Faster for low n...
+	return n;
+}
+
+// Size of the configuration struct in bytes (unused run structs not counted)
+static size_t conf_size(unsigned int topo)
+{
+	unsigned int n = topo_num_runs(topo);
+	return sizeof(struct conv_configuration) -
+	       (MAX_NUM_RUNS - n) * sizeof(struct conv_run);
+}
+
+/**************************************
+ *
+ * Command buffer size verification
+ *
+ **************************************/
+static void init_conv_input_size_v0(dmp_dv_kcmdraw_v0 *cmd,
+				    struct conv_data_size *in_size)
+{
+	in_size->w = cmd->w;
+	in_size->h = cmd->h;
+	in_size->z = cmd->z;
+	in_size->c = cmd->c;
+	in_size->size = cmd->w * cmd->h * cmd->z * cmd->c * 2;
+}
+
+static void get_conv_output_size_v0(dmp_dv_kcmdraw_v0_conv_run *run,
+			   struct conv_data_size *in_size,
+			   struct conv_data_size *out_size)
+{
+	int in_w = in_size->w;
+	int in_h = in_size->h;
+	int in_z = in_size->z;
+	int in_c = in_size->c;
+	int t0_w;
+	int t0_h;
+	int t0_z;
+	int t0_c;
+	// Convolution
+	if (run->conv_enable) { // Convolution
+		int m = run->m;
+		int p = run->p;
+		int px = p & 0xFF;
+		int py = p >> 8;
+		int pz = run->pz & 0x7F;
+		int conv_pad = run->conv_pad;
+		int conv_stride = run->conv_stride;
+		int pad_w0 = conv_pad & 0xff;
+		int pad_w1 = (conv_pad >> 8) & 0xff;
+		int pad_h0 = (conv_pad >> 16) & 0xff;
+		int pad_h1 = (conv_pad >> 24) & 0xff;
+		int stride_w = conv_stride & 0xff;
+		int stride_h = (conv_stride >> 8) & 0xff;
+		int core_w = pad_w0 + in_w + pad_w1;
+		int core_h = pad_h0 + in_h + pad_h1;
+		if (py == 0)
+			py = px;
+		t0_w = (core_w - px) / stride_w + 1;
+		t0_h = (core_h - py) / stride_h + 1;
+		// NOTE: No padding or stride in Z (depth) implemented yet!
+		t0_z = (in_z - pz + 1);
+		t0_c = m; // Number of convolution output channels...
+		//w_size = px * py * pz * in_size->c * m;
+	} else { // Bypass of convolution
+		t0_w = in_w;
+		t0_h = in_h;
+		t0_z = in_z;
+		t0_c = in_c;
+	}
+	// Pooling
+	if (((run->pool_enable) & 0x7) != 0) {
+		int pool_size = run->pool_size;
+		int pool_size_w = pool_size & 0xff;
+		int pool_size_h = (pool_size >> 8) & 0xff;
+		int pool_pad = run->pool_pad;
+		int pool_pad_w0 = pool_pad & 0xff;
+		int pool_pad_w1 = (pool_pad >> 8) & 0xff;
+		int pool_pad_h0 = (pool_pad >> 16) & 0xff;
+		int pool_pad_h1 = (pool_pad >> 24) & 0xf;
+		int pool_stride = run->pool_stride;
+		int pool_stride_w = pool_stride & 0xff;
+		int pool_stride_h = (pool_stride >> 8) & 0xff;
+		// unpool with argmax, or upsample
+		if ((run->pool_enable == 5) || (run->pool_enable == 4)) {
+			// NOTE: only 2x2 size and 2x2 stride supported currently
+			out_size->w = 2 * t0_w;
+			out_size->h = 2 * t0_h;
+		} else {
+			out_size->w = ((pool_pad_w0 + t0_w + pool_pad_w1) -
+				       pool_size_w) / pool_stride_w + 1;
+			out_size->h = ((pool_pad_h0 + t0_h + pool_pad_h1) -
+				       pool_size_h) / pool_stride_h + 1;
+		}
+		// NOTE: No pooling in Z (depth) implemented yet!
+		out_size->z = t0_z;
+		// Number of channels preserved in pooling...
+		out_size->c = t0_c;
+	} else { // Bypass of max pooling
+		out_size->w = t0_w;
+		out_size->h = t0_h;
+		out_size->z = t0_z;
+		out_size->c = t0_c;
+	}
+	out_size->size = out_size->w * out_size->h * out_size->z * out_size->c;
+	out_size->size *= 2;
+}
+
 static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 			      dmp_dv_kcmdraw __user *user_cmd, size_t size)
 {
@@ -376,11 +339,18 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 	size_t cmd_size, conv_len;
 	uint32_t *cmd_buf;
 	unsigned int runs, i;
-	uint32_t input_base_addr;
-	uint32_t output_base_addr;
-	uint32_t eltwise_base_addr;
-	uint32_t weight_base_addr;
+	uint32_t input_base_addr, input_buf_size;
+	uint32_t output_base_addr, output_buf_size;
+	uint32_t eltwise_base_addr, eltwise_buf_size;
+	uint32_t weight_base_addr, weight_buf_size;
+	struct conv_data_size conv_size;
+	uint32_t total_output_size = 0;
 	int ret;
+
+	// there should be at least one run
+	if (size < sizeof(dmp_dv_kcmdraw_v0) - 31 *
+	    sizeof(dmp_dv_kcmdraw_v0_conv_run))
+		return -EINVAL;
 
 	cmd = vmalloc(size);
 	if (!cmd)
@@ -390,23 +360,37 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 		return -EFAULT;
 	}
 
-	ret = get_dma_addr(dev, cmb, &cmd->input_buf, 0, &input_base_addr);
+	runs = topo_num_runs(cmd->topo);
+	if (size < sizeof(dmp_dv_kcmdraw_v0) - (32 - runs) *
+	    sizeof(dmp_dv_kcmdraw_v0_conv_run)) {
+		vfree(cmd);
+		return -EINVAL;
+	}
+
+	init_conv_input_size_v0(cmd, &conv_size);
+	ret = get_dma_addr(dev, cmb, &cmd->input_buf, 0, &input_base_addr,
+			   &input_buf_size);
 	if (ret) {
 		vfree(cmd);
 		return ret;
 	}
-	ret = get_dma_addr(dev, cmb, &cmd->output_buf, 0, &output_base_addr);
+	if (input_buf_size < conv_size.size) {
+		vfree(cmd);
+		return -EINVAL;
+	}
+	ret = get_dma_addr(dev, cmb, &cmd->output_buf, 0, &output_base_addr,
+			   &output_buf_size);
 	if (ret) {
 		vfree(cmd);
 		return ret;
 	}
-	ret = get_dma_addr(dev, cmb, &cmd->eltwise_buf, 0, &eltwise_base_addr);
+	ret = get_dma_addr(dev, cmb, &cmd->eltwise_buf, 0, &eltwise_base_addr,
+			   &eltwise_buf_size);
 	if (ret) {
 		vfree(cmd);
 		return ret;
 	}
 
-	runs = topo_num_runs(cmd->topo);
 	cmd_size = conf_size(cmd->topo) + sizeof(uint32_t) * 5;
 	conv_len = (conf_size(cmd->topo) + 3) / 4;
 	// TODO: check the cmb remaining size is big enough for this command
@@ -435,8 +419,14 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 	conv->output.output_mode = cmd->output_mode;
 
 	for (i = 0; i < runs; ++i) {
+		get_conv_output_size_v0(&cmd->run[i], &conv_size, &conv_size);
+		if ((cmd->topo >> i) & 1) {
+			total_output_size += conv_size.size;
+			init_conv_input_size_v0(cmd, &conv_size);
+		}
+		// TODO: check weight_buf_size is big enough
 		ret = get_dma_addr(dev, cmb, &cmd->run[i].weight_buf, 1,
-		                   &weight_base_addr);
+		                   &weight_base_addr, &weight_buf_size);
 		if (ret) {
 			vfree(cmd);
 			return ret;
@@ -459,6 +449,12 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 		conv->run[i].actfunc_param = cmd->run[i].actfunc_param;
 		conv->run[i].rectifi_en = cmd->run[i].rectifi_en;
 		conv->run[i].lrn = cmd->run[i].lrn;
+	}
+	if (output_buf_size < total_output_size ||
+	    (eltwise_base_addr != 0xDEADBEEF &&
+	     eltwise_buf_size < total_output_size)) {
+		vfree(cmd);
+		return -EINVAL;
 	}
 
 	cmb->size += cmd_size;
@@ -506,10 +502,14 @@ void dv_run_command(struct dmp_cmb *cmb, void *bar_logical)
 	cmd_buf[0] = 0x0108f004; // Write one word to 0x108
 	cmd_buf[1] = 0x00000001; // Set interrupt register
 	cmb->size += sizeof(uint32_t) * 2;
+	if (cmb->size % 8) {
+		cmd_buf[2] = 0;
+		cmb->size += sizeof(uint32_t);
+	}
 
 	barrier();
 	
 	iowrite32(cmb->physical, REG_IO_ADDR(bar_logical, 0x0400));
-	iowrite32((cmb->size + 7) / 8, REG_IO_ADDR(bar_logical, 0x0404));
+	iowrite32(cmb->size / 8, REG_IO_ADDR(bar_logical, 0x0404));
 	iowrite32(0x1, REG_IO_ADDR(bar_logical, 0x0408));
 }
