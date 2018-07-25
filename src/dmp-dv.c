@@ -125,10 +125,10 @@ static int wait_int(struct dmp_irq *subirq)
 	int wStat = 0;
 	unsigned long irq_save = 0;
 
-	spin_lock(&subirq->int_exclusive);
+	spin_lock_irqsave(&subirq->int_exclusive, irq_save);
 	wStat = subirq->int_status;
 	subirq->int_status = (wStat == 2) ? 0 : 1;
-	spin_unlock(&subirq->int_exclusive);
+	spin_unlock_irqrestore(&subirq->int_exclusive, irq_save);
 
 	if (wStat != 2) {
 		ret = wait_event_interruptible(subirq->int_status_wait,
