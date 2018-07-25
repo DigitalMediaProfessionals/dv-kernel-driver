@@ -28,6 +28,9 @@
 
 #define REG_IO_ADDR(BAR, OF) ((void __iomem *)(BAR) + OF)
 
+// TODO: get this from HW
+static int MAX_UNIFIED_BUFFER_SIZE = 640 * 1024;
+
 struct dmp_dmabuf_hash_entry {
 	int fd;
 	enum dma_data_direction dir;
@@ -235,6 +238,54 @@ static size_t conf_size(unsigned int topo)
 	       (MAX_NUM_RUNS - n) * sizeof(struct conv_run);
 }
 
+static int get_conv_out_width(int w, int k, int pl, int pr, int stride)
+{
+	return (w + pl + pr - k) / stride + 1;
+}
+
+static uint16_t get_conv_tiles_v0(dmp_dv_kcmdraw_v0 *cmd)
+{
+	int w, h, c, m, p, c_blocks, t;
+	int tw, ow, oh, os, ts_blk16, ts_blk128, ts_128, ts, uu;
+	int pad[4], stride[2];
+	
+	if (topo_num_runs(cmd->topo) > 1)
+		return 1;
+	if (cmd->run[0].conv_enable & 2)
+		return 1;
+
+	w = cmd->w;
+	h = cmd->h;
+	c = cmd->c;
+	m = cmd->run[0].m;
+	p = cmd->run[0].p & 0xFF;
+	pad[0] = cmd->run[0].conv_pad & 0xFF;
+	pad[1] = (cmd->run[0].conv_pad >> 8) & 0xFF;
+	pad[2] = (cmd->run[0].conv_pad >> 16) & 0xFF;
+	pad[3] = (cmd->run[0].conv_pad >> 24) & 0xFF;
+	stride[0] = cmd->run[0].conv_stride & 0xFF;
+	stride[1] = (cmd->run[0].conv_stride >> 8) & 0xFF;
+	c_blocks = (c >> 3) + (c & 7 ? 1 : 0);
+
+	t = 0;
+	while (1) {
+		++t;
+		tw = (w / t + (w % t ? 1 : 0)) + p - 1; // width of tile
+		ow = get_conv_out_width(tw, p, pad[0], pad[1], stride[0]);
+		oh = get_conv_out_width(h, p, pad[2], pad[3], stride[1]);
+		os = ow * oh * min(8, m); // output buffer size
+		ts_blk16 = tw * h * min(8, c); // tile size for a segment
+		ts_blk128 = (ts_blk16 >> 3) + (ts_blk16 & 7 ? 1 : 0);
+		ts_blk128 += (2 - ts_blk128) & 15;
+		ts_128 = ts_blk128 * c_blocks;
+		ts_128 += (0 - ts_128) & 15;
+		ts = ts_128 << 3; // input tile size in UBUF (in float16)
+		uu = ts + os; // unified buffer utilization
+		if (uu * 2 <= MAX_UNIFIED_BUFFER_SIZE)
+			return t;
+	}
+}
+
 /**************************************
  *
  * Command buffer size verification
@@ -430,7 +481,7 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 	conv->input.c = cmd->c;
 	conv->input.input_base_addr = input_base_addr;
 	conv->input.input_circular_offset = cmd->input_circular_offset;
-	conv->input.tiles = 1; //TODO
+	conv->input.tiles = get_conv_tiles_v0(cmd);
 
 	conv->output.output_base_addr = output_base_addr;
 	conv->output.eltwise_base_addr = eltwise_base_addr;
