@@ -81,7 +81,7 @@ struct conv_run {
 	uint16_t conv_stride; // bits [7:0] = X stride, bits [15:8] = Y stride
 	uint16_t conv_dilation; // bits [7:0] = X dilation, bits [15:8] = Y dilation
 	uint32_t weight_base_addr; // Filter Weight and Bias byte address
-	uint16_t weight_fmt; // Weight format (0 = random access blocks, 1 = compact stream, 3 = 8-bit qunatized stream)
+	uint16_t weight_fmt; // Weight format (0 = random access blocks, 1 = compact stream, 3 = 8-bit quantized stream)
 	uint16_t align_0;
 	// POOL
 	uint16_t pool_enable; // 0 = disabled, 1 = max pooling, 2 = average pooling, 3 = max pooling with argmax, 4 = upsample, 5 = unpool with argmax
@@ -248,7 +248,7 @@ static uint16_t get_conv_tiles_v0(dmp_dv_kcmdraw_v0 *cmd)
 	int w, h, c, m, p, c_blocks, t;
 	int tw, ow, oh, os, ts_blk16, ts_blk128, ts_128, ts, uu;
 	int pad[4], stride[2];
-	
+
 	if (topo_num_runs(cmd->topo) > 1)
 		return 1;
 	if (cmd->run[0].conv_enable & 2)
@@ -466,7 +466,7 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 	//       and allocate new buffer when so
 	cmd_buf = (uint32_t *)((uint8_t *)cmb->logical + cmb->size);
 	conv = (struct conv_configuration *)(cmd_buf + 3);
-	
+
 	cmd_buf[0] = 0x0020f004; // Write one word to 0x20
 	cmd_buf[1] = 0x00002000; // conv config start address in RISC-V memory
 	cmd_buf[2] = 0x0021f004 | ((conv_len - 1) << 3); // Write conv_len words to 0x21
@@ -570,7 +570,7 @@ int dv_convert_command(struct device *dev, struct dmp_cmb *cmb,
 void dv_run_command(struct dmp_cmb *cmb, void *bar_logical)
 {
 	uint32_t *cmd_buf;
-	
+
 	cmd_buf = (uint32_t *)((uint8_t *)cmb->logical + cmb->size);
 	cmd_buf[0] = 0x0108f004; // Write one word to 0x108
 	cmd_buf[1] = 0x00000001; // Set interrupt register
@@ -581,7 +581,7 @@ void dv_run_command(struct dmp_cmb *cmb, void *bar_logical)
 	}
 
 	barrier();
-	
+
 	iowrite32(cmb->physical, REG_IO_ADDR(bar_logical, 0x0400));
 	iowrite32(cmb->size / 8, REG_IO_ADDR(bar_logical, 0x0404));
 	iowrite32(0x1, REG_IO_ADDR(bar_logical, 0x0408));
