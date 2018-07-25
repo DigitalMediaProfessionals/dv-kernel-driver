@@ -245,7 +245,7 @@ static int get_conv_out_width(int w, int k, int pl, int pr, int stride)
 
 static uint16_t get_conv_tiles_v0(dmp_dv_kcmdraw_v0 *cmd)
 {
-	int w, h, c, m, p, c_blocks, t;
+	int w, h, c, m, px, py, c_blocks, t;
 	int tw, ow, oh, os, ts_blk16, ts_blk128, ts_128, ts, uu;
 	int pad[4], stride[2];
 
@@ -258,7 +258,8 @@ static uint16_t get_conv_tiles_v0(dmp_dv_kcmdraw_v0 *cmd)
 	h = cmd->h;
 	c = cmd->c;
 	m = cmd->run[0].m;
-	p = cmd->run[0].p & 0xFF;
+	px = cmd->run[0].p & 0xFF;
+	py = (cmd->run[0].p >> 8) & 0xFF;
 	pad[0] = cmd->run[0].conv_pad & 0xFF;
 	pad[1] = (cmd->run[0].conv_pad >> 8) & 0xFF;
 	pad[2] = (cmd->run[0].conv_pad >> 16) & 0xFF;
@@ -268,11 +269,11 @@ static uint16_t get_conv_tiles_v0(dmp_dv_kcmdraw_v0 *cmd)
 	c_blocks = (c >> 3) + (c & 7 ? 1 : 0);
 
 	t = 0;
-	while (1) {
+	for (; t < w;) {
 		++t;
-		tw = (w / t + (w % t ? 1 : 0)) + p - 1; // width of tile
-		ow = get_conv_out_width(tw, p, pad[0], pad[1], stride[0]);
-		oh = get_conv_out_width(h, p, pad[2], pad[3], stride[1]);
+		tw = (w / t + (w % t ? 1 : 0)) + px - 1; // width of tile
+		ow = get_conv_out_width(tw, px, pad[0], pad[1], stride[0]);
+		oh = get_conv_out_width(h, py, pad[2], pad[3], stride[1]);
 		os = ow * oh * min(8, m); // output buffer size
 		ts_blk16 = tw * h * min(8, c); // tile size for a segment
 		ts_blk128 = (ts_blk16 >> 3) + (ts_blk16 & 7 ? 1 : 0);
@@ -284,6 +285,8 @@ static uint16_t get_conv_tiles_v0(dmp_dv_kcmdraw_v0 *cmd)
 		if (uu * 2 <= MAX_UNIFIED_BUFFER_SIZE)
 			return t;
 	}
+
+	return 0;
 }
 
 /**************************************
@@ -335,7 +338,7 @@ static void get_conv_output_size_v0(dmp_dv_kcmdraw_v0_conv_run *run,
 		int m = run->m;
 		int p = run->p;
 		int px = p & 0xFF;
-		int py = p >> 8;
+		int py = (p >> 8) & 0xFF;
 		int pz = run->pz & 0x7F;
 		int conv_pad = run->conv_pad;
 		int conv_stride = run->conv_stride;
@@ -354,7 +357,7 @@ static void get_conv_output_size_v0(dmp_dv_kcmdraw_v0_conv_run *run,
 		// NOTE: No padding or stride in Z (depth) implemented yet!
 		t0_z = (in_z - pz + 1);
 		t0_c = m; // Number of convolution output channels...
-		*w_size = get_weight_size(in_c, m, px, (run->weight_fmt & 2),
+		*w_size = get_weight_size(in_c, m, max(px, py) | 1, (run->weight_fmt & 2),
 					  (run->conv_enable & 2));
 	} else { // Bypass of convolution
 		t0_w = in_w;
@@ -504,6 +507,20 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 			vfree(cmd);
 			return -EINVAL;
 		}
+
+		// Check kernel size for validness
+		{
+		  int px = cmd->run[i].p & 0xFF;
+		  int py = (cmd->run[i].p >> 8) & 0xFF;
+		  if (!py) {
+		    py = px;
+		  }
+		  if ((px < 1) || (py < 1) || (px > 7) || (py > 7)) {
+		    vfree(cmd);
+		    return -EINVAL;
+		  }
+		}
+
 		conv->run[i].m = cmd->run[i].m;
 		conv->run[i].conv_enable = cmd->run[i].conv_enable;
 		conv->run[i].p = cmd->run[i].p;
