@@ -250,9 +250,26 @@ static void init_conv_input_size_v0(dmp_dv_kcmdraw_v0 *cmd,
 	in_size->size = cmd->w * cmd->h * cmd->z * cmd->c * 2;
 }
 
+static uint32_t get_weight_size(int c, int m, int k, int quantized, int dw)
+{
+	if (dw)
+		c = 1;
+	if (k == 5)
+		c = c / 2 + c % 2;
+	else if (k == 3)
+		c = c / 8 + (c % 8 ? 1 : 0);
+	else if (k == 1)
+		c = c / 64 + (c % 64 ? 1 : 0);
+
+	if (quantized)
+		return 512 + 72 * m * c + 16 * ((m + 7) / 8);
+	else
+		return 144 * m * c + 16 * ((m + 7) / 8);
+}
+
 static void get_conv_output_size_v0(dmp_dv_kcmdraw_v0_conv_run *run,
 			   struct conv_data_size *in_size,
-			   struct conv_data_size *out_size)
+			   struct conv_data_size *out_size, uint32_t *w_size)
 {
 	int in_w = in_size->w;
 	int in_h = in_size->h;
@@ -286,7 +303,8 @@ static void get_conv_output_size_v0(dmp_dv_kcmdraw_v0_conv_run *run,
 		// NOTE: No padding or stride in Z (depth) implemented yet!
 		t0_z = (in_z - pz + 1);
 		t0_c = m; // Number of convolution output channels...
-		//w_size = px * py * pz * in_size->c * m;
+		*w_size = get_weight_size(in_c, m, px, (run->weight_fmt & 2),
+					  (run->conv_enable & 2));
 	} else { // Bypass of convolution
 		t0_w = in_w;
 		t0_h = in_h;
@@ -344,7 +362,7 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 	uint32_t eltwise_base_addr, eltwise_buf_size;
 	uint32_t weight_base_addr, weight_buf_size;
 	struct conv_data_size conv_size;
-	uint32_t total_output_size = 0;
+	uint32_t weight_size = 0, total_output_size = 0;
 	int ret;
 
 	// there should be at least one run
@@ -419,17 +437,21 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 	conv->output.output_mode = cmd->output_mode;
 
 	for (i = 0; i < runs; ++i) {
-		get_conv_output_size_v0(&cmd->run[i], &conv_size, &conv_size);
+		get_conv_output_size_v0(&cmd->run[i], &conv_size, &conv_size,
+					&weight_size);
 		if ((cmd->topo >> i) & 1) {
 			total_output_size += conv_size.size;
 			init_conv_input_size_v0(cmd, &conv_size);
 		}
-		// TODO: check weight_buf_size is big enough
 		ret = get_dma_addr(dev, cmb, &cmd->run[i].weight_buf, 1,
 		                   &weight_base_addr, &weight_buf_size);
 		if (ret) {
 			vfree(cmd);
 			return ret;
+		}
+		if (weight_buf_size < weight_size) {
+			vfree(cmd);
+			return -EINVAL;
 		}
 		conv->run[i].m = cmd->run[i].m;
 		conv->run[i].conv_enable = cmd->run[i].conv_enable;
