@@ -290,7 +290,7 @@ static uint16_t get_conv_tiles_v0(dmp_dv_kcmdraw_v0 *cmd)
 
 	if (topo_num_runs(cmd->topo) > 1)
 		return 1;
-	if (cmd->run[0].conv_enable & 2)
+	if (cmd->run[0].conv_enable & 2 || !cmd->run[0].conv_enable)
 		return 1;
 
 	w = cmd->w;
