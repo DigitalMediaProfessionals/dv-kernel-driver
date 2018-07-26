@@ -364,6 +364,7 @@ static void get_conv_output_size_v0(dmp_dv_kcmdraw_v0_conv_run *run,
 		t0_h = in_h;
 		t0_z = in_z;
 		t0_c = in_c;
+		*w_size = 0;
 	}
 	// Pooling
 	if (((run->pool_enable) & 0x7) != 0) {
@@ -503,7 +504,8 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 			vfree(cmd);
 			return ret;
 		}
-		if (weight_buf_size < weight_size) {
+		if (weight_base_addr != 0xDEADBEEF &&
+		    weight_buf_size < weight_size) {
 			vfree(cmd);
 			return -EINVAL;
 		}
