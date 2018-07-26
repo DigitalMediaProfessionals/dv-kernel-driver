@@ -330,8 +330,8 @@ int drm_unregister_chrdev(struct drm_dev *drm_dev)
 }
 
 static ssize_t conv_freq_show(struct device *dev,
-				    struct device_attribute *attr,
-				    char *buf)
+			      struct device_attribute *attr,
+			      char *buf)
 {
 	struct drm_dev *drm_dev = dev_get_drvdata(dev);
 	int freq = ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x424));
@@ -339,8 +339,8 @@ static ssize_t conv_freq_show(struct device *dev,
 }
 
 static ssize_t fc_freq_show(struct device *dev,
-				    struct device_attribute *attr,
-				    char *buf)
+			    struct device_attribute *attr,
+			    char *buf)
 {
 	struct drm_dev *drm_dev = dev_get_drvdata(dev);
 	int freq = ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x424));
@@ -354,6 +354,20 @@ static ssize_t conv_kick_count_show(struct device *dev,
 	struct drm_dev *drm_dev = dev_get_drvdata(dev);
 	int kick_count = ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x0100));
 	return scnprintf(buf, PAGE_SIZE, "%d\n", kick_count);
+}
+
+static ssize_t ub_size_show(struct device *dev,
+			    struct device_attribute *attr,
+			    char *buf)
+{
+	return scnprintf(buf, PAGE_SIZE, "%d\n", UNIFIED_BUFFER_SIZE);
+}
+
+static ssize_t max_kernel_size_show(struct device *dev,
+				    struct device_attribute *attr,
+				    char *buf)
+{
+	return scnprintf(buf, PAGE_SIZE, "%d\n", MAX_CONV_KERNEL_SIZE);
 }
 
 static ssize_t drm_firmware_write(struct file *filp, struct kobject *kobj,
@@ -389,11 +403,15 @@ static ssize_t drm_firmware_write(struct file *filp, struct kobject *kobj,
 static DEVICE_ATTR_RO(conv_freq);
 static DEVICE_ATTR_RO(fc_freq);
 static DEVICE_ATTR_RO(conv_kick_count);
+static DEVICE_ATTR_RO(ub_size);
+static DEVICE_ATTR_RO(max_kernel_size);
 
 static struct attribute *drm_attrs[] = {
 	&dev_attr_conv_freq.attr,
 	&dev_attr_fc_freq.attr,
 	&dev_attr_conv_kick_count.attr,
+	&dev_attr_ub_size.attr,
+	&dev_attr_max_kernel_size.attr,
 	NULL
 };
 

@@ -30,7 +30,8 @@
 #define REG_IO_ADDR(BAR, OF) ((void __iomem *)(BAR) + OF)
 
 // TODO: get this from HW
-static int MAX_UNIFIED_BUFFER_SIZE = 640 * 1024;
+int UNIFIED_BUFFER_SIZE = 640 * 1024;
+int MAX_CONV_KERNEL_SIZE = 7;
 
 struct dmp_cmb_list_entry {
 	dma_addr_t physical;
@@ -321,7 +322,7 @@ static uint16_t get_conv_tiles_v0(dmp_dv_kcmdraw_v0 *cmd)
 		ts_128 += (0 - ts_128) & 15;
 		ts = ts_128 << 3; // input tile size in UBUF (in float16)
 		uu = ts + os; // unified buffer utilization
-		if (uu * 2 <= MAX_UNIFIED_BUFFER_SIZE)
+		if (uu * 2 <= UNIFIED_BUFFER_SIZE)
 			return t;
 	}
 
@@ -541,6 +542,16 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 	conv->output.output_mode = cmd->output_mode;
 
 	for (i = 0; i < runs; ++i) {
+		// Check kernel size for validness
+		int px = cmd->run[i].p & 0xFF;
+		int py = (cmd->run[i].p >> 8) & 0xFF;
+		if (!py)
+			py = px;
+		if ((px < 1) || (py < 1) || (px > MAX_CONV_KERNEL_SIZE) ||
+		    (py > MAX_CONV_KERNEL_SIZE)) {
+			vfree(cmd);
+			return -EINVAL;
+		}
 		get_conv_output_size_v0(&cmd->run[i], &conv_size, &conv_size,
 					&weight_size);
 		if ((cmd->topo >> i) & 1) {
@@ -557,19 +568,6 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 		    weight_buf_size < weight_size) {
 			vfree(cmd);
 			return -EINVAL;
-		}
-
-		// Check kernel size for validness
-		{
-		  int px = cmd->run[i].p & 0xFF;
-		  int py = (cmd->run[i].p >> 8) & 0xFF;
-		  if (!py) {
-		    py = px;
-		  }
-		  if ((px < 1) || (py < 1) || (px > 7) || (py > 7)) {
-		    vfree(cmd);
-		    return -EINVAL;
-		  }
 		}
 
 		conv->run[i].m = cmd->run[i].m;
