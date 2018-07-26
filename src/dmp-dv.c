@@ -196,7 +196,6 @@ static long drm_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		container_of(inode->i_cdev, struct drm_dev, cdev);
 	struct dmp_dev *subdev = file->private_data;
 	dmp_dv_kcmd cmd_info;
-	__u32 kick_count;
 
 	switch (cmd) {
 	case DMP_DV_IOC_APPEND_CMD:
@@ -213,12 +212,6 @@ static long drm_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		break;
 	case DMP_DV_IOC_WAIT:
 		ret = wait_int(subdev->irq);
-		break;
-	case DMP_DV_IOC_GET_KICK_COUNT:
-		kick_count = ioread32(REG_IO_ADDR(subdev, 0x0100));
-		if (copy_to_user((void __user *)arg, &kick_count,
-		                 _IOC_SIZE(cmd)))
-			return -EFAULT;
 		break;
 	default:
 		break;
@@ -336,9 +329,36 @@ int drm_unregister_chrdev(struct drm_dev *drm_dev)
 	return 0;
 }
 
-ssize_t drm_firmware_write(struct file *filp, struct kobject *kobj,
-			   struct bin_attribute *bin_attr,
-			   char *buf, loff_t pos, size_t count)
+static ssize_t conv_freq_show(struct device *dev,
+				    struct device_attribute *attr,
+				    char *buf)
+{
+	struct drm_dev *drm_dev = dev_get_drvdata(dev);
+	int freq = ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x424));
+	return scnprintf(buf, PAGE_SIZE, "%d\n", freq & 0xFF);
+}
+
+static ssize_t fc_freq_show(struct device *dev,
+				    struct device_attribute *attr,
+				    char *buf)
+{
+	struct drm_dev *drm_dev = dev_get_drvdata(dev);
+	int freq = ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x424));
+	return scnprintf(buf, PAGE_SIZE, "%d\n", (freq >> 8) & 0xFF);
+}
+
+static ssize_t conv_kick_count_show(struct device *dev,
+				    struct device_attribute *attr,
+				    char *buf)
+{
+	struct drm_dev *drm_dev = dev_get_drvdata(dev);
+	int kick_count = ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x0100));
+	return scnprintf(buf, PAGE_SIZE, "%d\n", kick_count);
+}
+
+static ssize_t drm_firmware_write(struct file *filp, struct kobject *kobj,
+				  struct bin_attribute *bin_attr,
+				  char *buf, loff_t pos, size_t count)
 {
 	struct dmp_dev *subdev = bin_attr->private;
 	unsigned int len = count / 4;
@@ -364,7 +384,18 @@ ssize_t drm_firmware_write(struct file *filp, struct kobject *kobj,
 	mutex_unlock(&dv_firmware_lock);
 	
 	return count;
-}			       
+}
+
+static DEVICE_ATTR_RO(conv_freq);
+static DEVICE_ATTR_RO(fc_freq);
+static DEVICE_ATTR_RO(conv_kick_count);
+
+static struct attribute *drm_attrs[] = {
+	&dev_attr_conv_freq.attr,
+	&dev_attr_fc_freq.attr,
+	&dev_attr_conv_kick_count.attr,
+	NULL
+};
 
 static struct bin_attribute drm_firmware_attr = {
 	.attr =
@@ -514,6 +545,7 @@ static void drm_dev_release(struct device *dev)
 static u64 drm_dma_mask;
 
 static const struct attribute_group drm_attr_group = {
+	.attrs = drm_attrs,
 	.bin_attrs = drm_bin_attrs,
 };
 

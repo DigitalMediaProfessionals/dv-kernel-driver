@@ -132,6 +132,7 @@ int main(void) {
   struct ion_heap_query ion_query;
   struct dmp_dv_kcmd_impl dv_cmd;
   uint32_t ion_heap_id_mask = 0;
+  FILE *kf;
   
   ionfd = open("/dev/ion", O_RDONLY | O_CLOEXEC);
   if (ionfd < 0) {
@@ -222,12 +223,10 @@ int main(void) {
   }
   
   // kick command
-  ret = ioctl(dvfd, DMP_DV_IOC_GET_KICK_COUNT, &kick_count);
-  if (ret < 0) {
-    printf("Failed to get dv kick count!\n");
-    return -1;
-  }
+  kf = fopen("/sys/devices/platform/dmp_dv/conv_kick_count", "r");
+  fscanf(kf, "%d", &kick_count);
   printf("Conv kick count before kick = %d.\n", kick_count);
+  fclose(kf);
   
   dv_cmd.cmd_num = 2;
   void *cmds = malloc(cmd0.size + cmd1.size);
@@ -251,11 +250,11 @@ int main(void) {
   }
   free(cmds);
 
-  cmds = malloc(cmd0.size * 1024);
-  for (i = 0; i < 1024; ++i) {
+  cmds = malloc(cmd0.size * 8192);
+  for (i = 0; i < 8192; ++i) {
     memcpy(cmds + cmd0.size * i, &cmd0, cmd0.size);	
   }
-  dv_cmd.cmd_num = 1024;
+  dv_cmd.cmd_num = 8192;
   dv_cmd.cmd_pointer = (__u64)cmds;
   ret = ioctl(dvfd, DMP_DV_IOC_APPEND_CMD, &dv_cmd);
   if (ret < 0) {
@@ -283,12 +282,10 @@ int main(void) {
     return -1;
   }
   
-  ret = ioctl(dvfd, DMP_DV_IOC_GET_KICK_COUNT, &kick_count);
-  if (ret < 0) {
-    printf("Failed to get dv kick count!\n");
-    return -1;
-  }
-  printf("Conv kick count after kick = %d.\n", kick_count);
+  kf = fopen("/sys/devices/platform/dmp_dv/conv_kick_count", "r");
+  fscanf(kf, "%d", &kick_count);
+  printf("Conv kick count before kick = %d.\n", kick_count);
+  fclose(kf);
 
   close(cmd0.input_buf.fd);
   close(cmd0.output_buf.fd);

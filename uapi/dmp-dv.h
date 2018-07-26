@@ -65,7 +65,7 @@ typedef struct dmp_dv_kcmd_impl {
  * if the HW lock is not immediately available then will block in the kernel
  * until it get the lock.
  */
-#define DMP_DV_IOC_RUN			_IO(DMP_DV_IOC_MAGIC, 2)
+#define DMP_DV_IOC_RUN			_IOR(DMP_DV_IOC_MAGIC, 2, __u64)
 
 /**
  * DOC: DMP_DV_IOC_WAIT - Wait for the previously run to finish.
@@ -74,13 +74,6 @@ typedef struct dmp_dv_kcmd_impl {
  * Ignore if the hardware is not running or if it is running commands by other
  * owner.
  */
-#define DMP_DV_IOC_WAIT			_IO(DMP_DV_IOC_MAGIC, 3)
-
-/**
- * DOC: DMP_DV_IOC_GET_KICK_COUNT - Get finished kick count.
- *
- * Get the finished kick count by the HW.
- */
-#define DMP_DV_IOC_GET_KICK_COUNT	_IOR(DMP_DV_IOC_MAGIC, 4, __u32)
+#define DMP_DV_IOC_WAIT			_IOW(DMP_DV_IOC_MAGIC, 3, __u64)
 
 #endif  // _UAPI_LINUX_DMP_DV_H
