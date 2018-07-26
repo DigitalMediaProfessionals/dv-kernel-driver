@@ -18,6 +18,7 @@
 #include <linux/slab.h>
 #include <linux/uaccess.h>
 #include <linux/dma-buf.h>
+#include <linux/list.h>
 #include <linux/hashtable.h>
 
 #include "dmp-dv.h"
@@ -31,6 +32,14 @@
 // TODO: get this from HW
 static int MAX_UNIFIED_BUFFER_SIZE = 640 * 1024;
 
+struct dmp_cmb_list_entry {
+	dma_addr_t physical;
+	void *logical;
+	size_t size;
+	size_t capacity;
+	struct list_head list_node;
+};
+
 struct dmp_dmabuf_hash_entry {
 	int fd;
 	enum dma_data_direction dir;
@@ -43,10 +52,7 @@ struct dmp_dmabuf_hash_entry {
 };
 
 struct dmp_cmb {
-	dma_addr_t physical;
-	void *logical;
-	size_t size;
-
+	struct list_head cmb_list;
 	DECLARE_HASHTABLE(dmabuf_hash, 6);
 };
 
@@ -111,20 +117,45 @@ struct conv_data_size {
 	uint32_t size; // Total Size = w * h * z * c * sizeof(float16)
 };
 
+static struct dmp_cmb_list_entry *dv_cmb_allocate(struct device *dev)
+{
+	struct dmp_cmb_list_entry *cmb;
+	size_t alloc_size = CMB_SIZE;
+	
+	cmb = kmalloc(sizeof(*cmb), GFP_KERNEL);
+	if (!cmb)
+		return NULL;
+	
+	do {
+		cmb->logical = dma_alloc_coherent(dev, alloc_size,
+			&cmb->physical, GFP_KERNEL);
+		alloc_size >>= 1;
+	} while (!cmb->logical && alloc_size >= PAGE_SIZE);
+	if (!cmb->logical) {
+		kfree(cmb);
+		return NULL;
+	}
+	cmb->size = 0;
+	cmb->capacity = alloc_size << 1;
+
+	return cmb;
+}
+
 int dv_cmb_init(struct device *dev, struct dmp_cmb **cmb)
 {
+	struct dmp_cmb_list_entry *cmb_node;
+	
 	*cmb = kzalloc(sizeof(**cmb), GFP_KERNEL);
 	if (!(*cmb))
 		return -ENOMEM;
 
-	(*cmb)->logical =
-		dma_alloc_coherent(dev, CMB_SIZE, &(*cmb)->physical, GFP_KERNEL);
-	if (!(*cmb)->logical) {
+	INIT_LIST_HEAD(&(*cmb)->cmb_list);
+	cmb_node = dv_cmb_allocate(dev);
+	if (!cmb_node) {
 		kfree(*cmb);
-		*cmb = NULL;
 		return -ENOMEM;
 	}
-	(*cmb)->size = 0;
+	list_add(&cmb_node->list_node, &(*cmb)->cmb_list);
 
 	hash_init((*cmb)->dmabuf_hash);
 
@@ -134,17 +165,25 @@ int dv_cmb_init(struct device *dev, struct dmp_cmb **cmb)
 void dv_cmb_finalize(struct device *dev, struct dmp_cmb *cmb)
 {
 	int bkt;
-	struct hlist_node *tmp;
-	struct dmp_dmabuf_hash_entry *obj;
+	struct dmp_cmb_list_entry *ltmp;
+	struct dmp_cmb_list_entry *lobj;
+	struct hlist_node *htmp;
+	struct dmp_dmabuf_hash_entry *hobj;
 
-	hash_for_each_safe(cmb->dmabuf_hash, bkt, tmp, obj, hash_node) {
-		dma_buf_unmap_attachment(obj->attachment, obj->sgt, obj->dir);
-		dma_buf_detach(obj->dma_buf, obj->attachment);
-		dma_buf_put(obj->dma_buf);
-		hash_del(&obj->hash_node);
-		kfree(obj);
+	list_for_each_entry_safe(lobj, ltmp, &cmb->cmb_list, list_node) {
+		dma_free_coherent(dev, lobj->capacity, lobj->logical,
+			lobj->physical);
+		list_del(&lobj->list_node);
+		kfree(lobj);
 	}
-	dma_free_coherent(dev, CMB_SIZE, cmb->logical, cmb->physical);
+	
+	hash_for_each_safe(cmb->dmabuf_hash, bkt, htmp, hobj, hash_node) {
+		dma_buf_unmap_attachment(hobj->attachment, hobj->sgt, hobj->dir);
+		dma_buf_detach(hobj->dma_buf, hobj->attachment);
+		dma_buf_put(hobj->dma_buf);
+		hash_del(&hobj->hash_node);
+		kfree(hobj);
+	}
 	kfree(cmb);
 }
 
@@ -407,6 +446,7 @@ static void get_conv_output_size_v0(dmp_dv_kcmdraw_v0_conv_run *run,
 static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 			      dmp_dv_kcmdraw __user *user_cmd, size_t size)
 {
+	struct dmp_cmb_list_entry *cmb_node;
 	dmp_dv_kcmdraw_v0 *cmd;
 	struct conv_configuration *conv;
 	size_t cmd_size, conv_len;
@@ -464,11 +504,20 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 		return ret;
 	}
 
+	cmb_node = list_first_entry(&cmb->cmb_list, struct dmp_cmb_list_entry,
+				    list_node);
 	cmd_size = conf_size(cmd->topo) + sizeof(uint32_t) * 5;
 	conv_len = (conf_size(cmd->topo) + 3) / 4;
-	// TODO: check the cmb remaining size is big enough for this command
-	//       and allocate new buffer when so
-	cmd_buf = (uint32_t *)((uint8_t *)cmb->logical + cmb->size);
+	// include size of jump or interrupt commands
+	if (cmb_node->size + cmd_size + 8 > cmb_node->capacity) {
+		cmb_node = dv_cmb_allocate(dev);
+		if (!cmb_node) {
+			vfree(cmd);
+			return -ENOMEM;
+		}
+		list_add(&cmb_node->list_node, &cmb->cmb_list);
+	}
+	cmd_buf = (uint32_t *)((uint8_t *)cmb_node->logical + cmb_node->size);
 	conv = (struct conv_configuration *)(cmd_buf + 3);
 
 	cmd_buf[0] = 0x0020f004; // Write one word to 0x20
@@ -549,7 +598,7 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 		return -EINVAL;
 	}
 
-	cmb->size += cmd_size;
+	cmb_node->size += cmd_size;
 
 	vfree(cmd);
 	return 0;
@@ -588,20 +637,33 @@ int dv_convert_command(struct device *dev, struct dmp_cmb *cmb,
 
 void dv_run_command(struct dmp_cmb *cmb, void *bar_logical)
 {
+	struct dmp_cmb_list_entry *cmb_node;
 	uint32_t *cmd_buf;
+	dma_addr_t prev_addr = 0xDEADBEEF;
+	size_t prev_size = 0;
 
-	cmd_buf = (uint32_t *)((uint8_t *)cmb->logical + cmb->size);
-	cmd_buf[0] = 0x0108f004; // Write one word to 0x108
-	cmd_buf[1] = 0x00000001; // Set interrupt register
-	cmb->size += sizeof(uint32_t) * 2;
-	if (cmb->size % 8) {
-		cmd_buf[2] = 0;
-		cmb->size += sizeof(uint32_t);
+	list_for_each_entry(cmb_node, &cmb->cmb_list, list_node) {
+		cmd_buf = (uint32_t *)((uint8_t *)cmb_node->logical +
+			  cmb_node->size);
+		if (prev_size == 0) {
+			cmd_buf[0] = 0x0108f004; // Write one word to 0x108
+			cmd_buf[1] = 0x00000001; // Set interrupt register
+		} else {
+			cmd_buf[0] = 0x1 | prev_size; // Jump length
+			cmd_buf[1] = prev_addr; // Jump address
+		}
+		cmb_node->size += sizeof(uint32_t) * 2;
+		if (cmb_node->size % 8) {
+			cmd_buf[2] = 0;
+			cmb_node->size += sizeof(uint32_t);
+		}
+		prev_addr = cmb_node->physical;
+		prev_size = cmb_node->size;
 	}
 
 	barrier();
 
-	iowrite32(cmb->physical, REG_IO_ADDR(bar_logical, 0x0400));
-	iowrite32(cmb->size / 8, REG_IO_ADDR(bar_logical, 0x0404));
+	iowrite32(prev_addr, REG_IO_ADDR(bar_logical, 0x0400));
+	iowrite32(prev_size / 8, REG_IO_ADDR(bar_logical, 0x0404));
 	iowrite32(0x1, REG_IO_ADDR(bar_logical, 0x0408));
 }

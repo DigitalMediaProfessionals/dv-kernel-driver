@@ -250,7 +250,19 @@ int main(void) {
     return -1;
   }
   free(cmds);
-  
+
+  cmds = malloc(cmd0.size * 1024);
+  for (i = 0; i < 1024; ++i) {
+    memcpy(cmds + cmd0.size * i, &cmd0, cmd0.size);	
+  }
+  dv_cmd.cmd_num = 1024;
+  dv_cmd.cmd_pointer = (__u64)cmds;
+  ret = ioctl(dvfd, DMP_DV_IOC_APPEND_CMD, &dv_cmd);
+  if (ret < 0) {
+    printf("Failed to append command!\n");
+    return -1;
+  }
+
   dv_cmd.cmd_num = 1;
   dv_cmd.cmd_pointer = (__u64)&cmd2;
   ret = ioctl(dvfd, DMP_DV_IOC_APPEND_CMD, &dv_cmd);
