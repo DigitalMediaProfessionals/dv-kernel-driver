@@ -381,10 +381,23 @@ static ssize_t drm_firmware_write(struct file *filp, struct kobject *kobj,
 	if ((pos + count) > DRM_MAX_FIRMWARE_SIZE)
 		return -EINVAL;
 	
+	mutex_lock(&dv_firmware_lock);
+
+	if (pos == 0) {
+		if (count < 10) {
+			// Set firmware to use ROM
+			iowrite32(1, REG_IO_ADDR(subdev, 0x44));
+			mutex_unlock(&dv_firmware_lock);
+			pr_info(DRM_DEV_NAME ": Switch firmware to use ROM.\n");
+			return count;
+		} else {
+			// Set firmware to use ROM
+			iowrite32(0, REG_IO_ADDR(subdev, 0x44));
+		}
+	}
+
 	pr_info(DRM_DEV_NAME ": Updating firmware 0x%04x..0x%04x.\n",
 		(unsigned int)pos, (unsigned int)(pos + count));
-	
-	mutex_lock(&dv_firmware_lock);
 
 	iowrite32(pos, REG_IO_ADDR(subdev, 0x80));
 	while (len--) {
@@ -493,6 +506,9 @@ static int drm_dev_probe(struct platform_device *pdev)
 	
 	// Set conv to command list mode
 	iowrite32(1, REG_IO_ADDR((&drm_dev->subdev[0]), 0x40C));
+	
+	// Set firmware to use ROM
+	iowrite32(1, REG_IO_ADDR((&drm_dev->subdev[0]), 0x44));
 	
 	err = drm_register_chrdev(drm_dev);
 	if (err) {
