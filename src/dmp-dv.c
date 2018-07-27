@@ -64,6 +64,7 @@ static const char *subdev_name[2] = { "conv", "fc" };
 #include <linux/dma-mapping.h>
 #include <linux/sysfs.h>
 #include <linux/mutex.h>
+#include <linux/workqueue.h>
 #ifdef USE_DEVTREE
 #include <linux/of.h>
 #include <linux/of_irq.h>
@@ -74,17 +75,26 @@ static const char *subdev_name[2] = { "conv", "fc" };
 
 #define REG_IO_ADDR(DV, OF) ((void __iomem *)(DV->bar_logical) + OF)
 
+struct dv_cmd_work_item {
+	struct dmp_dev_private *dev_pri;
+	uint64_t cmd_id;
+	struct work_struct work;
+};
+
 struct dmp_dev {
 	unsigned int bar_physical;
 	unsigned int bar_size;
 	void *bar_logical;
 	int irq_addr;
 
-	spinlock_t int_exclusive;
-	wait_queue_head_t int_status_wait;
-	int irqno;
 	int init_done;
-	int int_status;
+	spinlock_t int_exclusive;
+	spinlock_t wq_exclusive;
+	wait_queue_head_t wait_queue;
+	int irqno;
+	uint64_t cmd_id;
+	uint64_t hw_id;
+	struct workqueue_struct *wq;
 };
 
 struct dmp_dev_private {
@@ -110,36 +120,45 @@ static irqreturn_t handle_int(int irq, void *dev_id)
 	spin_lock(&dev->int_exclusive);
 	iowrite32(0, REG_IO_ADDR(dev, dev->irq_addr));
 
-	dev->int_status = 2;
-	wake_up_interruptible(&dev->int_status_wait);
+	++dev->hw_id;
+	wake_up_interruptible(&dev->wait_queue);
 	spin_unlock(&dev->int_exclusive);
 
 	return IRQ_HANDLED;
 }
 
-static int wait_int(struct dmp_dev *dev)
+static int wait_cmd_id(struct dmp_dev *dev, uint64_t cmd_id)
 {
 	long ret = 0;
-	int wStat = 0;
 	unsigned long irq_save = 0;
+	uint64_t hw_id;
 
 	spin_lock_irqsave(&dev->int_exclusive, irq_save);
-	wStat = dev->int_status;
-	dev->int_status = (wStat == 2) ? 0 : 1;
+	hw_id = dev->hw_id;
 	spin_unlock_irqrestore(&dev->int_exclusive, irq_save);
 
-	if (wStat != 2) {
-		ret = wait_event_interruptible(dev->int_status_wait,
-					       (dev->int_status & 2));
-		if (!ret) {
-			spin_lock_irqsave(&dev->int_exclusive, irq_save);
-			dev->int_status = 0;
-			spin_unlock_irqrestore(&dev->int_exclusive,
-					       irq_save);
-		}
-	}
+	if (hw_id >= cmd_id)
+		return 0;
 
+	ret = wait_event_interruptible_timeout(dev->wait_queue,
+		(dev->hw_id >= cmd_id), DRM_WAIT_TIMEOUT);
+
+	if (ret > 0)
+		return 0;
+	else if (ret == 0)
+		return -EBUSY;
 	return ret;
+}
+
+static void cmd_work(struct work_struct *work)
+{
+	struct dv_cmd_work_item	*wo = container_of(work,
+		struct dv_cmd_work_item, work);
+	struct dmp_dev_private *dev_pri = wo->dev_pri;
+	dv_run_command(dev_pri->cmb, dev_pri->dev->bar_logical);
+	while (wait_cmd_id(dev_pri->dev, wo->cmd_id) != 0)
+		;
+	kfree(work);
 }
 
 static int drm_open(struct inode *inode, struct file *file)
@@ -182,6 +201,7 @@ static int drm_release(struct inode *inode, struct file *file)
 	struct dmp_dev_private *dev_pri;
 	drm_dev = container_of(inode->i_cdev, struct drm_dev, cdev);
 	dev_pri = file->private_data;
+	flush_workqueue(dev_pri->dev->wq);
 	dv_cmb_finalize(drm_dev->dev, dev_pri->cmb);
 	kfree(dev_pri);
 	return 0;
@@ -194,7 +214,9 @@ static long drm_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	struct drm_dev *drm_dev =
 		container_of(inode->i_cdev, struct drm_dev, cdev);
 	struct dmp_dev_private *dev_pri = file->private_data;
+	struct dv_cmd_work_item *wo;
 	dmp_dv_kcmd cmd_info;
+	uint64_t cmd_id;
 
 	switch (cmd) {
 	case DMP_DV_IOC_APPEND_CMD:
@@ -206,11 +228,25 @@ static long drm_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		ret = dv_convert_command(drm_dev->dev, dev_pri->cmb, &cmd_info);
 		break;
 	case DMP_DV_IOC_RUN:
-		// TODO: use work queue
-		dv_run_command(dev_pri->cmb, dev_pri->dev->bar_logical);
+		wo = kmalloc(sizeof(*wo), GFP_KERNEL);
+		if (!wo)
+			return -ENOMEM;
+		wo->dev_pri = dev_pri;
+		INIT_WORK(&wo->work, cmd_work);
+		spin_lock(&dev_pri->dev->wq_exclusive);
+		cmd_id = ++dev_pri->dev->cmd_id;
+		if (copy_to_user((void __user *)arg, &cmd_id, _IOC_SIZE(cmd))) {
+			spin_unlock(&dev_pri->dev->wq_exclusive);
+			return -EFAULT;
+		}
+		wo->cmd_id = cmd_id;
+		queue_work(dev_pri->dev->wq, &wo->work);
+		spin_unlock(&dev_pri->dev->wq_exclusive);
 		break;
 	case DMP_DV_IOC_WAIT:
-		ret = wait_int(dev_pri->dev);
+		if (copy_from_user(&cmd_id, (void __user *)arg, _IOC_SIZE(cmd)))
+			return -EFAULT;
+		ret = wait_cmd_id(dev_pri->dev, cmd_id);
 		break;
 	default:
 		break;
@@ -279,8 +315,20 @@ int drm_register_chrdev(struct drm_dev *drm_dev)
 		}
 
 		// initialize:
-		init_waitqueue_head(&(drm_dev->subdev[i].int_status_wait));
+		init_waitqueue_head(&(drm_dev->subdev[i].wait_queue));
 		spin_lock_init(&(drm_dev->subdev[i].int_exclusive));
+		spin_lock_init(&(drm_dev->subdev[i].wq_exclusive));
+
+		drm_dev->subdev[i].wq = alloc_ordered_workqueue(
+			"dv_wq_%s", 0, subdev_name[i]);
+		if (!drm_dev->subdev[i].wq) {
+			err = -ENOMEM;
+			device_destroy(dddrm_class, MKDEV(driver_major, i));
+			dev_err(drm_dev->dev,
+				"work queue allocation fail %d\n", i);
+			goto fail_device_init;
+		}
+
 		drm_dev->subdev[i].init_done = 1;
 	}
 
@@ -289,6 +337,7 @@ int drm_register_chrdev(struct drm_dev *drm_dev)
 fail_device_init:
 	for (i = 0; i < DRM_NUM_SUBDEV; i++) {
 		if (drm_dev->subdev[i].init_done) {
+			destroy_workqueue(drm_dev->subdev[i].wq);
 			free_irq(drm_dev->subdev[i].irqno,
 				 &(drm_dev->subdev[i]));
 			device_destroy(dddrm_class, MKDEV(driver_major, i));
@@ -313,6 +362,7 @@ int drm_unregister_chrdev(struct drm_dev *drm_dev)
 
 	for (i = 0; i < DRM_NUM_SUBDEV; i++) {
 		if (drm_dev->subdev[i].init_done) {
+			destroy_workqueue(drm_dev->subdev[i].wq);
 			free_irq(drm_dev->subdev[i].irqno,
 				 &(drm_dev->subdev[i]));
 			device_destroy(dddrm_class, MKDEV(driver_major, i));
@@ -498,7 +548,8 @@ static int drm_dev_probe(struct platform_device *pdev)
 		drm_dev->subdev[i].irq_addr = irq_addr[i];
 
 		drm_dev->subdev[i].init_done = 0;
-		drm_dev->subdev[i].int_status = 0;
+		drm_dev->subdev[i].cmd_id = 0;
+		drm_dev->subdev[i].hw_id = 0;
 	}
 
 	// set firmware private attribute to conv subdev

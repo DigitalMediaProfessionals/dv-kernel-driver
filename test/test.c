@@ -132,6 +132,7 @@ int main(void) {
   struct ion_heap_query ion_query;
   struct dmp_dv_kcmd_impl dv_cmd;
   uint32_t ion_heap_id_mask = 0;
+  uint64_t cmd_id, cmd_id2;
   FILE *kf;
   
   ionfd = open("/dev/ion", O_RDONLY | O_CLOEXEC);
@@ -262,6 +263,26 @@ int main(void) {
     return -1;
   }
 
+  ret = ioctl(dvfd, DMP_DV_IOC_RUN, &cmd_id);
+  if (ret < 0) {
+    printf("Failed to start run!\n");
+    return -1;
+  }
+  
+  ret = ioctl(dvfd, DMP_DV_IOC_WAIT, &cmd_id);
+  if (ret < 0) {
+    printf("Failed to wait dv HW!\n");
+    return -1;
+  }
+  
+  kf = fopen("/sys/devices/platform/dmp_dv/conv_kick_count", "r");
+  fscanf(kf, "%d", &kick_count);
+  printf("Conv kick count after 1st kick = %d.\n", kick_count);
+  fclose(kf);
+
+  close(dvfd);
+  dvfd = open("/dev/dv_conv", O_RDONLY | O_CLOEXEC);
+  
   dv_cmd.cmd_num = 1;
   dv_cmd.cmd_pointer = (__u64)&cmd2;
   ret = ioctl(dvfd, DMP_DV_IOC_APPEND_CMD, &dv_cmd);
@@ -270,22 +291,88 @@ int main(void) {
     return -1;
   }
 
-  ret = ioctl(dvfd, DMP_DV_IOC_RUN, NULL);
+  ret = ioctl(dvfd, DMP_DV_IOC_RUN, &cmd_id);
   if (ret < 0) {
     printf("Failed to start run!\n");
     return -1;
   }
   
-  ret = ioctl(dvfd, DMP_DV_IOC_WAIT, NULL);
-  if (ret < 0) {
-    printf("Failed to wait dv HW!\n");
-    return -1;
+  for (i = 0; i < 10; ++i) {
+    ret = ioctl(dvfd, DMP_DV_IOC_WAIT, &cmd_id);
+    if (ret == 0) {
+      printf("Wait finished after timeout %d times.\n", i);
+      break;
+    }
   }
   
   kf = fopen("/sys/devices/platform/dmp_dv/conv_kick_count", "r");
   fscanf(kf, "%d", &kick_count);
-  printf("Conv kick count before kick = %d.\n", kick_count);
+  printf("Conv kick count after 2nd kick = %d.\n", kick_count);
   fclose(kf);
+
+  ret = ioctl(dvfd, DMP_DV_IOC_RUN, &cmd_id);
+  if (ret < 0) {
+    printf("Failed to start run!\n");
+    return -1;
+  }
+  printf("1st batch cmd_id=%llu\n", cmd_id);
+  
+  ret = ioctl(dvfd, DMP_DV_IOC_RUN, &cmd_id2);
+  if (ret < 0) {
+    printf("Failed to start run!\n");
+    return -1;
+  }
+  printf("2nd batch cmd_id=%llu\n", cmd_id2);
+
+  printf("Wait for 1st batch cmd...\n");
+  for (i = 0; i < 10; ++i) {
+    ret = ioctl(dvfd, DMP_DV_IOC_WAIT, &cmd_id);
+    if (ret == 0) {
+      printf("Wait finished after timeout %d times.\n", i);
+      break;
+    }
+  }
+
+  printf("Wait for 2nd batch cmd...\n");
+  for (i = 0; i < 10; ++i) {
+    ret = ioctl(dvfd, DMP_DV_IOC_WAIT, &cmd_id2);
+    if (ret == 0) {
+      printf("Wait finished after timeout %d times.\n", i);
+      break;
+    }
+  }
+
+  ret = ioctl(dvfd, DMP_DV_IOC_RUN, &cmd_id);
+  if (ret < 0) {
+    printf("Failed to start run!\n");
+    return -1;
+  }
+  printf("1st batch cmd_id=%llu\n", cmd_id);
+  
+  ret = ioctl(dvfd, DMP_DV_IOC_RUN, &cmd_id2);
+  if (ret < 0) {
+    printf("Failed to start run!\n");
+    return -1;
+  }
+  printf("2nd batch cmd_id=%llu\n", cmd_id2);
+
+  printf("Wait for 2nd batch cmd...\n");
+  for (i = 0; i < 10; ++i) {
+    ret = ioctl(dvfd, DMP_DV_IOC_WAIT, &cmd_id2);
+    if (ret == 0) {
+      printf("Wait finished after timeout %d times.\n", i);
+      break;
+    }
+  }
+
+  printf("Wait for 1st batch cmd...\n");
+  for (i = 0; i < 10; ++i) {
+    ret = ioctl(dvfd, DMP_DV_IOC_WAIT, &cmd_id);
+    if (ret == 0) {
+      printf("Wait finished after timeout %d times.\n", i);
+      break;
+    }
+  }
 
   close(cmd0.input_buf.fd);
   close(cmd0.output_buf.fd);

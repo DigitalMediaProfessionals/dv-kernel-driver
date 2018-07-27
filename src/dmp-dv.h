@@ -22,6 +22,7 @@
 #define DRM_DEV_NAME "dmp_dv"
 #define DRM_NUM_SUBDEV 2
 #define DRM_MAX_FIRMWARE_SIZE 0x2000
+#define DRM_WAIT_TIMEOUT (2 * HZ)
 
 struct device;
 struct dmp_dv_kcmd_impl;

@@ -651,13 +651,12 @@ void dv_run_command(struct dmp_cmb *cmb, void *bar_logical)
 			cmd_buf[0] = 0x1 | prev_size; // Jump length
 			cmd_buf[1] = prev_addr; // Jump address
 		}
-		cmb_node->size += sizeof(uint32_t) * 2;
-		if (cmb_node->size % 8) {
-			cmd_buf[2] = 0;
-			cmb_node->size += sizeof(uint32_t);
-		}
 		prev_addr = cmb_node->physical;
-		prev_size = cmb_node->size;
+		prev_size = cmb_node->size + sizeof(uint32_t) * 2;
+		if (prev_size % 8) {
+			cmd_buf[2] = 0;
+			prev_size += sizeof(uint32_t);
+		}
 	}
 
 	barrier();
