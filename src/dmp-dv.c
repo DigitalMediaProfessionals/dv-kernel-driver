@@ -152,13 +152,15 @@ static int wait_cmd_id(struct dmp_dev *dev, uint64_t cmd_id)
 
 static void cmd_work(struct work_struct *work)
 {
+	int count = 0;
 	struct dv_cmd_work_item	*wo = container_of(work,
 		struct dv_cmd_work_item, work);
 	struct dmp_dev_private *dev_pri = wo->dev_pri;
 	dv_run_command(dev_pri->cmb, dev_pri->dev->bar_logical);
-	while (wait_cmd_id(dev_pri->dev, wo->cmd_id) != 0)
-		;
-	kfree(work);
+	while (count < DRM_MAX_WAIT_COUNT &&
+	       wait_cmd_id(dev_pri->dev, wo->cmd_id) != 0)
+		++count;
+	kfree(wo);
 }
 
 static int drm_open(struct inode *inode, struct file *file)
