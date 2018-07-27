@@ -61,18 +61,16 @@ typedef struct dmp_dv_kcmd_impl {
 /**
  * DOC: DMP_DV_IOC_RUN - Run all commands in the command buffer.
  *
- * Run all commands in the current command buffer. Will acquire the HW lock;
- * if the HW lock is not immediately available then will block in the kernel
- * until it get the lock.
+ * Queue all commands in the current command buffer to be run by HW.
+ * Returns the command run ID.
  */
 #define DMP_DV_IOC_RUN			_IOR(DMP_DV_IOC_MAGIC, 2, __u64)
 
 /**
  * DOC: DMP_DV_IOC_WAIT - Wait for the previously run to finish.
  *
- * Wait for the interrupt if this device is currently running.
- * Ignore if the hardware is not running or if it is running commands by other
- * owner.
+ * Wait for the specified run ID to be finished.
+ * Immediately return if the specified ID is already finished.
  */
 #define DMP_DV_IOC_WAIT			_IOW(DMP_DV_IOC_MAGIC, 3, __u64)
 
