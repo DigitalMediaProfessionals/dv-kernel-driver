@@ -142,25 +142,26 @@ static struct dmp_cmb_list_entry *dv_cmb_allocate(struct device *dev)
 	return cmb;
 }
 
-int dv_cmb_init(struct device *dev, struct dmp_cmb **cmb)
+struct dmp_cmb *dv_cmb_init(struct device *dev)
 {
+	struct dmp_cmb *cmb;
 	struct dmp_cmb_list_entry *cmb_node;
-	
-	*cmb = kzalloc(sizeof(**cmb), GFP_KERNEL);
-	if (!(*cmb))
-		return -ENOMEM;
 
-	INIT_LIST_HEAD(&(*cmb)->cmb_list);
+	cmb = kzalloc(sizeof(*cmb), GFP_KERNEL);
+	if (!cmb)
+		return NULL;
+
+	INIT_LIST_HEAD(&cmb->cmb_list);
 	cmb_node = dv_cmb_allocate(dev);
 	if (!cmb_node) {
-		kfree(*cmb);
-		return -ENOMEM;
+		kfree(cmb);
+		return NULL;
 	}
-	list_add(&cmb_node->list_node, &(*cmb)->cmb_list);
+	list_add(&cmb_node->list_node, &cmb->cmb_list);
 
-	hash_init((*cmb)->dmabuf_hash);
+	hash_init(cmb->dmabuf_hash);
 
-	return 0;
+	return cmb;
 }
 
 void dv_cmb_finalize(struct device *dev, struct dmp_cmb *cmb)

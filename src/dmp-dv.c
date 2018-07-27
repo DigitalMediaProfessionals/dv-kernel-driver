@@ -74,7 +74,12 @@ static const char *subdev_name[2] = { "conv", "fc" };
 
 #define REG_IO_ADDR(DV, OF) ((void __iomem *)(DV->bar_logical) + OF)
 
-struct dmp_irq {
+struct dmp_dev {
+	unsigned int bar_physical;
+	unsigned int bar_size;
+	void *bar_logical;
+	int irq_addr;
+
 	spinlock_t int_exclusive;
 	wait_queue_head_t int_status_wait;
 	int irqno;
@@ -82,13 +87,8 @@ struct dmp_irq {
 	int int_status;
 };
 
-struct dmp_dev {
-	unsigned int bar_physical;
-	unsigned int bar_size;
-	void *bar_logical;
-	int irq_addr;
-
-	struct dmp_irq *irq;
+struct dmp_dev_private {
+	struct dmp_dev *dev;
 	struct dmp_cmb *cmb;
 };
 
@@ -98,7 +98,6 @@ struct drm_dev {
 	struct cdev cdev;
 
 	struct dmp_dev subdev[DRM_NUM_SUBDEV];
-	struct dmp_irq subirq[DRM_NUM_SUBDEV];
 };
 
 static struct class *dddrm_class = NULL;
@@ -106,37 +105,36 @@ static DEFINE_MUTEX(dv_firmware_lock);
 
 static irqreturn_t handle_int(int irq, void *dev_id)
 {
-	struct dmp_dev *subdev = dev_id;
-	struct dmp_irq *subirq = subdev->irq;
+	struct dmp_dev *dev = dev_id;
 
-	spin_lock(&subirq->int_exclusive);
-	iowrite32(0, REG_IO_ADDR(subdev, subdev->irq_addr));
+	spin_lock(&dev->int_exclusive);
+	iowrite32(0, REG_IO_ADDR(dev, dev->irq_addr));
 
-	subirq->int_status = 2;
-	wake_up_interruptible(&subirq->int_status_wait);
-	spin_unlock(&subirq->int_exclusive);
+	dev->int_status = 2;
+	wake_up_interruptible(&dev->int_status_wait);
+	spin_unlock(&dev->int_exclusive);
 
 	return IRQ_HANDLED;
 }
 
-static int wait_int(struct dmp_irq *subirq)
+static int wait_int(struct dmp_dev *dev)
 {
 	long ret = 0;
 	int wStat = 0;
 	unsigned long irq_save = 0;
 
-	spin_lock_irqsave(&subirq->int_exclusive, irq_save);
-	wStat = subirq->int_status;
-	subirq->int_status = (wStat == 2) ? 0 : 1;
-	spin_unlock_irqrestore(&subirq->int_exclusive, irq_save);
+	spin_lock_irqsave(&dev->int_exclusive, irq_save);
+	wStat = dev->int_status;
+	dev->int_status = (wStat == 2) ? 0 : 1;
+	spin_unlock_irqrestore(&dev->int_exclusive, irq_save);
 
 	if (wStat != 2) {
-		ret = wait_event_interruptible(subirq->int_status_wait,
-					       (subirq->int_status & 2));
+		ret = wait_event_interruptible(dev->int_status_wait,
+					       (dev->int_status & 2));
 		if (!ret) {
-			spin_lock_irqsave(&subirq->int_exclusive, irq_save);
-			subirq->int_status = 0;
-			spin_unlock_irqrestore(&subirq->int_exclusive,
+			spin_lock_irqsave(&dev->int_exclusive, irq_save);
+			dev->int_status = 0;
+			spin_unlock_irqrestore(&dev->int_exclusive,
 					       irq_save);
 		}
 	}
@@ -147,32 +145,33 @@ static int wait_int(struct dmp_irq *subirq)
 static int drm_open(struct inode *inode, struct file *file)
 {
 	struct drm_dev *drm_dev;
-	struct dmp_dev *subdev;
+	struct dmp_dev_private *dev_pri;
 	int ret = 0;
 	unsigned int minor;
 
 	minor = iminor(inode);
 	drm_dev = container_of(inode->i_cdev, struct drm_dev, cdev);
-	subdev = kmalloc(sizeof(*subdev), GFP_KERNEL);
-	if (!subdev) {
+	dev_pri = kmalloc(sizeof(*dev_pri), GFP_KERNEL);
+	if (!dev_pri) {
 		pr_err(DRM_DEV_NAME ": Failed to allocate sub device data.\n");
 		ret = -ENOMEM;
 		goto drm_open_fail;
 	}
 
-	*subdev = drm_dev->subdev[minor];
-	if (dv_cmb_init(drm_dev->dev, &subdev->cmb) != 0) {
+	dev_pri->dev = &drm_dev->subdev[minor];
+	dev_pri->cmb = dv_cmb_init(drm_dev->dev);
+	if (!dev_pri->cmb) {
 		pr_err(DRM_DEV_NAME ": Failed to allocate command buffer.\n");
 		ret = -ENOMEM;
 		goto drm_allocate_cmb_fail;
 	}
 
-	file->private_data = subdev;
+	file->private_data = dev_pri;
 	
 	return 0;
 
 drm_allocate_cmb_fail:
-	kfree(subdev);
+	kfree(dev_pri);
 drm_open_fail:
 	return ret;
 }
@@ -180,11 +179,11 @@ drm_open_fail:
 static int drm_release(struct inode *inode, struct file *file)
 {
 	struct drm_dev *drm_dev;
-	struct dmp_dev *subdev;
+	struct dmp_dev_private *dev_pri;
 	drm_dev = container_of(inode->i_cdev, struct drm_dev, cdev);
-	subdev = file->private_data;
-	dv_cmb_finalize(drm_dev->dev, subdev->cmb);
-	kfree(subdev);
+	dev_pri = file->private_data;
+	dv_cmb_finalize(drm_dev->dev, dev_pri->cmb);
+	kfree(dev_pri);
 	return 0;
 }
 
@@ -194,7 +193,7 @@ static long drm_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	struct inode *inode = file->f_path.dentry->d_inode;
 	struct drm_dev *drm_dev =
 		container_of(inode->i_cdev, struct drm_dev, cdev);
-	struct dmp_dev *subdev = file->private_data;
+	struct dmp_dev_private *dev_pri = file->private_data;
 	dmp_dv_kcmd cmd_info;
 
 	switch (cmd) {
@@ -204,14 +203,14 @@ static long drm_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		if (copy_from_user(&cmd_info, (void __user *)arg,
 				   _IOC_SIZE(cmd)))
 			return -EFAULT;
-		ret = dv_convert_command(drm_dev->dev, subdev->cmb, &cmd_info);
+		ret = dv_convert_command(drm_dev->dev, dev_pri->cmb, &cmd_info);
 		break;
 	case DMP_DV_IOC_RUN:
 		// TODO: use work queue
-		dv_run_command(subdev->cmb, subdev->bar_logical);
+		dv_run_command(dev_pri->cmb, dev_pri->dev->bar_logical);
 		break;
 	case DMP_DV_IOC_WAIT:
-		ret = wait_int(subdev->irq);
+		ret = wait_int(dev_pri->dev);
 		break;
 	default:
 		break;
@@ -269,7 +268,7 @@ int drm_register_chrdev(struct drm_dev *drm_dev)
 			goto fail_device_init;
 		}
 
-		rIRQ = drm_dev->subirq[i].irqno;
+		rIRQ = drm_dev->subdev[i].irqno;
 		err = request_irq(rIRQ, handle_int, IRQF_SHARED, DRM_DEV_NAME,
 				  &(drm_dev->subdev[i]));
 		if (err) {
@@ -280,22 +279,20 @@ int drm_register_chrdev(struct drm_dev *drm_dev)
 		}
 
 		// initialize:
-		init_waitqueue_head(&(drm_dev->subirq[i].int_status_wait));
-		spin_lock_init(&(drm_dev->subirq[i].int_exclusive));
-		drm_dev->subirq[i].init_done = 1;
-		drm_dev->subdev[i].irq = &drm_dev->subirq[i];
-		drm_dev->subdev[i].cmb = NULL;
+		init_waitqueue_head(&(drm_dev->subdev[i].int_status_wait));
+		spin_lock_init(&(drm_dev->subdev[i].int_exclusive));
+		drm_dev->subdev[i].init_done = 1;
 	}
 
 	return 0;
 
 fail_device_init:
 	for (i = 0; i < DRM_NUM_SUBDEV; i++) {
-		if (drm_dev->subirq[i].init_done) {
-			free_irq(drm_dev->subirq[i].irqno,
+		if (drm_dev->subdev[i].init_done) {
+			free_irq(drm_dev->subdev[i].irqno,
 				 &(drm_dev->subdev[i]));
 			device_destroy(dddrm_class, MKDEV(driver_major, i));
-			drm_dev->subirq[i].init_done = 0;
+			drm_dev->subdev[i].init_done = 0;
 		}
 	}
 	cdev_del(&drm_dev->cdev);
@@ -315,11 +312,11 @@ int drm_unregister_chrdev(struct drm_dev *drm_dev)
 	dev_dbg(drm_dev->dev, "drm_unregister_chrdev\n");
 
 	for (i = 0; i < DRM_NUM_SUBDEV; i++) {
-		if (drm_dev->subirq[i].init_done) {
-			free_irq(drm_dev->subirq[i].irqno,
+		if (drm_dev->subdev[i].init_done) {
+			free_irq(drm_dev->subdev[i].irqno,
 				 &(drm_dev->subdev[i]));
 			device_destroy(dddrm_class, MKDEV(driver_major, i));
-			drm_dev->subirq[i].init_done = 0;
+			drm_dev->subdev[i].init_done = 0;
 		}
 	}
 
@@ -469,10 +466,10 @@ static int drm_dev_probe(struct platform_device *pdev)
 
 	for (i = 0; i < DRM_NUM_SUBDEV; i++) {
 #ifdef USE_DEVTREE
-		drm_dev->subirq[i].irqno = of_irq_get(devNode, sd2i_map[i]);
+		drm_dev->subdev[i].irqno = of_irq_get(devNode, sd2i_map[i]);
 // NOTE: we could(should) get the reg. address by this method too ...
 #else
-		drm_dev->subirq[i].irqno = sd2i_map[i];
+		drm_dev->subdev[i].irqno = sd2i_map[i];
 #endif
 
 		drm_dev->subdev[i].bar_physical = sd2rb[i];
@@ -487,8 +484,8 @@ static int drm_dev_probe(struct platform_device *pdev)
 		}
 		drm_dev->subdev[i].irq_addr = irq_addr[i];
 
-		drm_dev->subirq[i].init_done = 0;
-		drm_dev->subirq[i].int_status = 0;
+		drm_dev->subdev[i].init_done = 0;
+		drm_dev->subdev[i].int_status = 0;
 	}
 
 	// set firmware private attribute to conv subdev

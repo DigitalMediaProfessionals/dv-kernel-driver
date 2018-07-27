@@ -30,7 +30,7 @@ struct dmp_cmb;
 extern int UNIFIED_BUFFER_SIZE;
 extern int MAX_CONV_KERNEL_SIZE;
 
-int dv_cmb_init(struct device *dev, struct dmp_cmb **cmb);
+struct dmp_cmb *dv_cmb_init(struct device *dev);
 void dv_cmb_finalize(struct device *dev, struct dmp_cmb *cmb);
 int dv_convert_command(struct device *dev, struct dmp_cmb *cmb,
 		       struct dmp_dv_kcmd_impl *cmd_info);
