@@ -69,7 +69,7 @@ typedef struct dmp_dv_kcmdraw_v0_impl {
 
 
 /// @brief Raw command for fully connected block version 0.
-typedef struct dmp_dv_cmdraw_fc_v0_impl {
+typedef struct dmp_dv_kcmdraw_fc_v0_impl {
   __u32 size;              // size of this structure
   __u32 version;           // version of this structure
   dmp_dv_kbuf weight_buf;  // Buffer with packed weights
