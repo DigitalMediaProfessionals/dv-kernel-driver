@@ -323,16 +323,6 @@ static uint16_t get_conv_tiles_v0(dmp_dv_kcmdraw_v0 *cmd)
  * Command buffer size verification
  *
  **************************************/
-static void init_conv_input_size_v0(dmp_dv_kcmdraw_v0 *cmd,
-				    struct conv_data_size *in_size)
-{
-	in_size->w = cmd->w;
-	in_size->h = cmd->h;
-	in_size->z = cmd->z;
-	in_size->c = cmd->c;
-	in_size->size = cmd->w * cmd->h * cmd->z * cmd->c * 2;
-}
-
 static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 			      dmp_dv_kcmdraw __user *user_cmd, size_t size)
 {

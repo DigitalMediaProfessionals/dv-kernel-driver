@@ -77,11 +77,32 @@ static uint32_t get_weight_size(int c, int m, int k, int quantized, int dw) {
 }
 
 
+/// @brief Assigns input size.
+static inline void init_conv_input_size_v0_4(
+    __u16 w, __u16 h, __u16 z, __u16 c,
+    struct conv_data_size *in_size) {
+  in_size->w = w;
+  in_size->h = h;
+  in_size->z = z;
+  in_size->c = c;
+  in_size->size = (uint32_t)w * h * z * c * 2;  // we are using 16-bit floats
+}
+
+
+/// @brief Assigns input size.
+static inline void init_conv_input_size_v0(
+    const dmp_dv_kcmdraw_v0 *cmd,
+    struct conv_data_size *in_size) {
+  init_conv_input_size_v0_4(cmd->w, cmd->h, cmd->z, cmd->c, in_size);
+}
+
+
 /// @brief Fills output size and weights size for layer configuration version 0.
 static void get_conv_output_size_v0(
     dmp_dv_kcmdraw_v0_conv_run *run,
     struct conv_data_size *in_size,
-    struct conv_data_size *out_size, uint32_t *w_size) {
+    struct conv_data_size *out_size,
+    uint32_t *w_size) {
 
   int in_w = in_size->w;
   int in_h = in_size->h;
@@ -117,7 +138,7 @@ static void get_conv_output_size_v0(
     // NOTE: No padding or stride in Z (depth) implemented yet!
     t0_z = (in_z - pz + 1);
     t0_c = m;  // Number of convolution output channels
-    *w_size = get_weight_size(in_c, m, max(px, py) | 1, (run->weight_fmt & 2),
+    *w_size = get_weight_size(in_c, m, ((px > py) ? px : py) | 1, (run->weight_fmt & 2),
                               (run->conv_enable & 2));
   }
   else {  // Bypass of convolution
