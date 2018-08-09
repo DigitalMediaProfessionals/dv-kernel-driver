@@ -114,27 +114,37 @@ dmp_dv_kcmdraw_v0 cmd2 = {
         },
 };
 
+dmp_dv_kcmdraw_fc_v0 cmd3 = {
+    .size = sizeof(dmp_dv_kcmdraw_fc_v0),
+    .version = 0,
+    .input_size = 1024,
+    .output_size = 1000,
+    .weight_fmt = 1,
+    .actfunc = 0,
+    .actfunc_param = 0,
+};
+
 static int allocate_ion_buf(int fd, uint32_t mask, size_t size) {
   struct ion_allocation_data ion_alloc;
-  
+
   memset(&ion_alloc, 0, sizeof(ion_alloc));
   ion_alloc.len = size;
   ion_alloc.heap_id_mask = mask;
   ioctl(fd, ION_IOC_ALLOC, &ion_alloc);
-  
+
   return ion_alloc.fd;
 }
 
 int main(void) {
   int i, ret, kick_count = 0;
-  int ionfd, dvfd;
+  int ionfd, dvfd, fcfd;
   struct ion_heap_data *ion_heap;
   struct ion_heap_query ion_query;
   struct dmp_dv_kcmd_impl dv_cmd;
   uint32_t ion_heap_id_mask = 0;
   uint64_t cmd_id, cmd_id2;
   FILE *kf;
-  
+
   ionfd = open("/dev/ion", O_RDONLY | O_CLOEXEC);
   if (ionfd < 0) {
     printf("Open ion device failed!\n");
@@ -145,7 +155,12 @@ int main(void) {
     printf("Open dv_conv device failed!\n");
     return -1;
   }
-  
+  fcfd = open("/dev/dv_fc", O_RDONLY | O_CLOEXEC);
+  if (fcfd < 0) {
+    printf("Open dv_conv device failed!\n");
+    return -1;
+  }
+
   // query ion heaps
   memset(&ion_query, 0, sizeof(ion_query));
   ret = ioctl(ionfd, ION_IOC_HEAP_QUERY, &ion_query);
@@ -161,18 +176,18 @@ int main(void) {
     printf("ion heap query failed!\n");
     return -1;
   }
-  
+
   for (i = 0; i < ion_query.cnt; ++i) {
     if (ion_heap[i].type == ION_HEAP_TYPE_DMA)
 	    ion_heap_id_mask |= (1 << ion_heap[i].heap_id);
   }
   free(ion_heap);
-  
+
   if (ion_heap_id_mask == 0) {
     printf("No suitable ion heap found!\n");
     return -1;
   }
-  
+#if 0
   // allocate buffers
   cmd0.input_buf.fd = allocate_ion_buf(ionfd, ion_heap_id_mask, 8 * 8 * 8 * 8);
   if (cmd0.input_buf.fd < 0) {
@@ -222,13 +237,13 @@ int main(void) {
     printf("Failed to allocate ion buffer!\n");
     return -1;
   }
-  
+
   // kick command
   kf = fopen("/sys/devices/platform/dmp_dv/conv_kick_count", "r");
   fscanf(kf, "%d", &kick_count);
   printf("Conv kick count before kick = %d.\n", kick_count);
   fclose(kf);
-  
+
   dv_cmd.cmd_num = 2;
   void *cmds = malloc(cmd0.size + cmd1.size);
   memcpy(cmds, &cmd0, cmd0.size);
@@ -251,11 +266,11 @@ int main(void) {
   }
   free(cmds);
 
-  cmds = malloc(cmd0.size * 8192);
-  for (i = 0; i < 8192; ++i) {
-    memcpy(cmds + cmd0.size * i, &cmd0, cmd0.size);	
+  cmds = malloc(cmd0.size * 1024);
+  for (i = 0; i < 1024; ++i) {
+    memcpy(cmds + cmd0.size * i, &cmd0, cmd0.size);
   }
-  dv_cmd.cmd_num = 8192;
+  dv_cmd.cmd_num = 1024;
   dv_cmd.cmd_pointer = (__u64)cmds;
   ret = ioctl(dvfd, DMP_DV_IOC_APPEND_CMD, &dv_cmd);
   if (ret < 0) {
@@ -268,13 +283,13 @@ int main(void) {
     printf("Failed to start run!\n");
     return -1;
   }
-  
+
   ret = ioctl(dvfd, DMP_DV_IOC_WAIT, &cmd_id);
   if (ret < 0) {
     printf("Failed to wait dv HW!\n");
     return -1;
   }
-  
+
   kf = fopen("/sys/devices/platform/dmp_dv/conv_kick_count", "r");
   fscanf(kf, "%d", &kick_count);
   printf("Conv kick count after 1st kick = %d.\n", kick_count);
@@ -282,7 +297,7 @@ int main(void) {
 
   close(dvfd);
   dvfd = open("/dev/dv_conv", O_RDONLY | O_CLOEXEC);
-  
+
   dv_cmd.cmd_num = 1;
   dv_cmd.cmd_pointer = (__u64)&cmd2;
   ret = ioctl(dvfd, DMP_DV_IOC_APPEND_CMD, &dv_cmd);
@@ -296,7 +311,7 @@ int main(void) {
     printf("Failed to start run!\n");
     return -1;
   }
-  
+
   for (i = 0; i < 10; ++i) {
     ret = ioctl(dvfd, DMP_DV_IOC_WAIT, &cmd_id);
     if (ret == 0) {
@@ -304,7 +319,7 @@ int main(void) {
       break;
     }
   }
-  
+
   kf = fopen("/sys/devices/platform/dmp_dv/conv_kick_count", "r");
   fscanf(kf, "%d", &kick_count);
   printf("Conv kick count after 2nd kick = %d.\n", kick_count);
@@ -316,7 +331,7 @@ int main(void) {
     return -1;
   }
   printf("1st batch cmd_id=%llu\n", cmd_id);
-  
+
   ret = ioctl(dvfd, DMP_DV_IOC_RUN, &cmd_id2);
   if (ret < 0) {
     printf("Failed to start run!\n");
@@ -348,7 +363,7 @@ int main(void) {
     return -1;
   }
   printf("1st batch cmd_id=%llu\n", cmd_id);
-  
+
   ret = ioctl(dvfd, DMP_DV_IOC_RUN, &cmd_id2);
   if (ret < 0) {
     printf("Failed to start run!\n");
@@ -373,11 +388,48 @@ int main(void) {
       break;
     }
   }
+#endif
+  // prepare fc command
+  cmd3.input_buf.fd = allocate_ion_buf(ionfd, ion_heap_id_mask, 1024 * 2);
+  if (cmd3.input_buf.fd < 0) {
+    printf("Failed to allocate ion buffer!\n");
+    return -1;
+  }
+  cmd3.output_buf.fd = allocate_ion_buf(ionfd, ion_heap_id_mask, 1000 * 2);
+  if (cmd3.output_buf.fd < 0) {
+    printf("Failed to allocate ion buffer!\n");
+    return -1;
+  }
+  cmd3.weight_buf.fd = allocate_ion_buf(ionfd, ion_heap_id_mask, 512 + 1024 * 1000 + 1000 * 2);
+  if (cmd3.weight_buf.fd < 0) {
+    printf("Failed to allocate ion buffer!\n");
+    return -1;
+  }
 
-  close(cmd0.input_buf.fd);
-  close(cmd0.output_buf.fd);
-  close(cmd0.run[0].weight_buf.fd);
+  // append and kick fc command
+  dv_cmd.cmd_num = 1;
+  dv_cmd.cmd_pointer = (__u64)&cmd3;
+  ret = ioctl(fcfd, DMP_DV_IOC_APPEND_CMD, &dv_cmd);
+  if (ret < 0) {
+    printf("Failed to append command!\n");
+    return -1;
+  }
+
+  ret = ioctl(fcfd, DMP_DV_IOC_RUN, &cmd_id);
+  if (ret < 0) {
+    printf("Failed to start run!\n");
+    return -1;
+  }
+
+  ret = ioctl(fcfd, DMP_DV_IOC_WAIT, &cmd_id);
+  if (ret < 0) {
+    printf("Failed to wait dv_fc HW!\n");
+  } else {
+    printf("Wait successfully for dv_fc HW!\n");
+  }
+
   close(ionfd);
   close(dvfd);
+  close(fcfd);
   return 0;
 }

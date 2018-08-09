@@ -77,6 +77,7 @@ static const char *subdev_name[2] = { "conv", "fc" };
 
 struct dv_cmd_work_item {
 	struct dmp_dev_private *dev_pri;
+	void (*run_func)(struct dmp_cmb *, void *);
 	uint64_t cmd_id;
 	struct work_struct work;
 };
@@ -156,7 +157,7 @@ static void cmd_work(struct work_struct *work)
 	struct dv_cmd_work_item	*wo = container_of(work,
 		struct dv_cmd_work_item, work);
 	struct dmp_dev_private *dev_pri = wo->dev_pri;
-	dv_run_command(dev_pri->cmb, dev_pri->dev->bar_logical);
+	wo->run_func(dev_pri->cmb, dev_pri->dev->bar_logical);
 	while (count < DRM_MAX_WAIT_COUNT &&
 	       wait_cmd_id(dev_pri->dev, wo->cmd_id) != 0)
 		++count;
@@ -188,7 +189,7 @@ static int drm_open(struct inode *inode, struct file *file)
 	}
 
 	file->private_data = dev_pri;
-	
+
 	return 0;
 
 drm_allocate_cmb_fail:
@@ -209,6 +210,17 @@ static int drm_release(struct inode *inode, struct file *file)
 	return 0;
 }
 
+static int (*cmd_func[DRM_NUM_SUBDEV])(struct device *, struct dmp_cmb *,
+		struct dmp_dv_kcmd_impl *) = {
+	dv_convert_conv_command,
+	dv_convert_fc_command,
+};
+
+static void (*run_func[DRM_NUM_SUBDEV])(struct dmp_cmb *, void *) = {
+	dv_run_conv_command,
+	dv_run_fc_command,
+};
+
 static long drm_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
 	long ret = 0;
@@ -219,6 +231,7 @@ static long drm_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	struct dv_cmd_work_item *wo;
 	dmp_dv_kcmd cmd_info;
 	uint64_t cmd_id;
+	unsigned int minor = iminor(inode);
 
 	switch (cmd) {
 	case DMP_DV_IOC_APPEND_CMD:
@@ -227,13 +240,14 @@ static long drm_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		if (copy_from_user(&cmd_info, (void __user *)arg,
 				   _IOC_SIZE(cmd)))
 			return -EFAULT;
-		ret = dv_convert_command(drm_dev->dev, dev_pri->cmb, &cmd_info);
+		ret = cmd_func[minor](drm_dev->dev, dev_pri->cmb, &cmd_info);
 		break;
 	case DMP_DV_IOC_RUN:
 		wo = kmalloc(sizeof(*wo), GFP_KERNEL);
 		if (!wo)
 			return -ENOMEM;
 		wo->dev_pri = dev_pri;
+		wo->run_func = run_func[minor];
 		INIT_WORK(&wo->work, cmd_work);
 		spin_lock(&dev_pri->dev->wq_exclusive);
 		cmd_id = ++dev_pri->dev->cmd_id;
@@ -426,13 +440,13 @@ static ssize_t drm_firmware_write(struct file *filp, struct kobject *kobj,
 	struct dmp_dev *subdev = bin_attr->private;
 	unsigned int len = count / 4;
 	uint32_t *f_buf = (uint32_t*)buf;
-	
+
 	if (!subdev)
 		return -ENODEV;
-	
+
 	if ((pos + count) > DRM_MAX_FIRMWARE_SIZE)
 		return -EINVAL;
-	
+
 	mutex_lock(&dv_firmware_lock);
 
 	if (pos == 0) {
@@ -456,9 +470,9 @@ static ssize_t drm_firmware_write(struct file *filp, struct kobject *kobj,
 		iowrite32(*f_buf, REG_IO_ADDR(subdev, 0x84));
 		++f_buf;
 	}
-	
+
 	mutex_unlock(&dv_firmware_lock);
-	
+
 	return count;
 }
 
@@ -556,13 +570,16 @@ static int drm_dev_probe(struct platform_device *pdev)
 
 	// set firmware private attribute to conv subdev
 	drm_firmware_attr.private = &drm_dev->subdev[0];
-	
+
 	// Set conv to command list mode
 	iowrite32(1, REG_IO_ADDR((&drm_dev->subdev[0]), 0x40C));
-	
+
+	// Set fc to command list mode
+	iowrite32(1, REG_IO_ADDR((&drm_dev->subdev[1]), 0x28));
+
 	// Set firmware to use ROM
 	iowrite32(1, REG_IO_ADDR((&drm_dev->subdev[0]), 0x44));
-	
+
 	err = drm_register_chrdev(drm_dev);
 	if (err) {
 		dev_err(&pdev->dev, "register chrdev fail\n");

@@ -34,8 +34,11 @@ extern int MAX_CONV_KERNEL_SIZE;
 
 struct dmp_cmb *dv_cmb_init(struct device *dev);
 void dv_cmb_finalize(struct device *dev, struct dmp_cmb *cmb);
-int dv_convert_command(struct device *dev, struct dmp_cmb *cmb,
-		       struct dmp_dv_kcmd_impl *cmd_info);
-void dv_run_command(struct dmp_cmb *cmb, void *bar_logical);
+int dv_convert_conv_command(struct device *dev, struct dmp_cmb *cmb,
+			    struct dmp_dv_kcmd_impl *cmd_info);
+void dv_run_conv_command(struct dmp_cmb *cmb, void *bar_logical);
+int dv_convert_fc_command(struct device *dev, struct dmp_cmb *cmb,
+			  struct dmp_dv_kcmd_impl *cmd_info);
+void dv_run_fc_command(struct dmp_cmb *cmb, void *bar_logical);
 
 #endif
