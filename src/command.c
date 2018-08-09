@@ -467,7 +467,7 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 	    sizeof(dmp_dv_kcmdraw_v0_conv_run))
 		return -EINVAL;
 
-	cmd = vmalloc(size);
+	cmd = kmalloc(size, GFP_KERNEL);
 	if (!cmd)
 		return -ENOMEM;
 	if (copy_from_user(cmd, user_cmd, size)) {
@@ -599,7 +599,7 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 
 	cmb_node->size += cmd_size;
 
-	vfree(cmd);
+	kfree(cmd);
 	return 0;
 }
 
