@@ -23,6 +23,7 @@
 
 #include "dmp-dv.h"
 #include "../uapi/dmp_dv_cmdraw_v0.h"
+#include "../uapi/dimensions.h"
 
 #define MAX_NUM_RUNS 32
 #define CMB_SIZE (16 * PAGE_SIZE)
@@ -110,23 +111,15 @@ struct conv_configuration {
 	struct conv_run run[MAX_NUM_RUNS];
 };
 
-struct conv_data_size {
-	int32_t w; // Width
-	int32_t h; // Height
-	int32_t z; // Depth
-	int32_t c; // Channels
-	uint32_t size; // Total Size = w * h * z * c * sizeof(float16)
-};
-
 static struct dmp_cmb_list_entry *dv_cmb_allocate(struct device *dev)
 {
 	struct dmp_cmb_list_entry *cmb;
 	size_t alloc_size = CMB_SIZE;
-	
+
 	cmb = kmalloc(sizeof(*cmb), GFP_KERNEL);
 	if (!cmb)
 		return NULL;
-	
+
 	do {
 		cmb->logical = dma_alloc_coherent(dev, alloc_size,
 			&cmb->physical, GFP_KERNEL);
@@ -178,7 +171,7 @@ void dv_cmb_finalize(struct device *dev, struct dmp_cmb *cmb)
 		list_del(&lobj->list_node);
 		kfree(lobj);
 	}
-	
+
 	hash_for_each_safe(cmb->dmabuf_hash, bkt, htmp, hobj, hash_node) {
 		dma_buf_unmap_attachment(hobj->attachment, hobj->sgt, hobj->dir);
 		dma_buf_detach(hobj->dma_buf, hobj->attachment);
@@ -279,11 +272,6 @@ static size_t conf_size(unsigned int topo)
 	       (MAX_NUM_RUNS - n) * sizeof(struct conv_run);
 }
 
-static int get_conv_out_width(int w, int k, int pl, int pr, int stride)
-{
-	return (w + pl + pr - k) / stride + 1;
-}
-
 static uint16_t get_conv_tiles_v0(dmp_dv_kcmdraw_v0 *cmd)
 {
 	int w, h, c, m, px, py, c_blocks, t;
@@ -343,106 +331,6 @@ static void init_conv_input_size_v0(dmp_dv_kcmdraw_v0 *cmd,
 	in_size->z = cmd->z;
 	in_size->c = cmd->c;
 	in_size->size = cmd->w * cmd->h * cmd->z * cmd->c * 2;
-}
-
-static uint32_t get_weight_size(int c, int m, int k, int quantized, int dw)
-{
-	if (dw)
-		c = 1;
-	if (k == 5)
-		c = c / 2 + c % 2;
-	else if (k == 3)
-		c = c / 8 + (c % 8 ? 1 : 0);
-	else if (k == 1)
-		c = c / 64 + (c % 64 ? 1 : 0);
-
-	if (quantized)
-		return 512 + 72 * m * c + 16 * ((m + 7) / 8);
-	else
-		return 144 * m * c + 16 * ((m + 7) / 8);
-}
-
-static void get_conv_output_size_v0(dmp_dv_kcmdraw_v0_conv_run *run,
-			   struct conv_data_size *in_size,
-			   struct conv_data_size *out_size, uint32_t *w_size)
-{
-	int in_w = in_size->w;
-	int in_h = in_size->h;
-	int in_z = in_size->z;
-	int in_c = in_size->c;
-	int t0_w;
-	int t0_h;
-	int t0_z;
-	int t0_c;
-	// Convolution
-	if (run->conv_enable) { // Convolution
-		int m = run->m;
-		int p = run->p;
-		int px = p & 0xFF;
-		int py = (p >> 8) & 0xFF;
-		int pz = run->pz & 0x7F;
-		int conv_pad = run->conv_pad;
-		int conv_stride = run->conv_stride;
-		int pad_w0 = conv_pad & 0xff;
-		int pad_w1 = (conv_pad >> 8) & 0xff;
-		int pad_h0 = (conv_pad >> 16) & 0xff;
-		int pad_h1 = (conv_pad >> 24) & 0xff;
-		int stride_w = conv_stride & 0xff;
-		int stride_h = (conv_stride >> 8) & 0xff;
-		int core_w = pad_w0 + in_w + pad_w1;
-		int core_h = pad_h0 + in_h + pad_h1;
-		if (py == 0)
-			py = px;
-		t0_w = (core_w - px) / stride_w + 1;
-		t0_h = (core_h - py) / stride_h + 1;
-		// NOTE: No padding or stride in Z (depth) implemented yet!
-		t0_z = (in_z - pz + 1);
-		t0_c = m; // Number of convolution output channels...
-		*w_size = get_weight_size(in_c, m, max(px, py) | 1, (run->weight_fmt & 2),
-					  (run->conv_enable & 2));
-	} else { // Bypass of convolution
-		t0_w = in_w;
-		t0_h = in_h;
-		t0_z = in_z;
-		t0_c = in_c;
-		*w_size = 0;
-	}
-	// Pooling
-	if (((run->pool_enable) & 0x7) != 0) {
-		int pool_size = run->pool_size;
-		int pool_size_w = pool_size & 0xff;
-		int pool_size_h = (pool_size >> 8) & 0xff;
-		int pool_pad = run->pool_pad;
-		int pool_pad_w0 = pool_pad & 0xff;
-		int pool_pad_w1 = (pool_pad >> 8) & 0xff;
-		int pool_pad_h0 = (pool_pad >> 16) & 0xff;
-		int pool_pad_h1 = (pool_pad >> 24) & 0xf;
-		int pool_stride = run->pool_stride;
-		int pool_stride_w = pool_stride & 0xff;
-		int pool_stride_h = (pool_stride >> 8) & 0xff;
-		// unpool with argmax, or upsample
-		if ((run->pool_enable == 5) || (run->pool_enable == 4)) {
-			// NOTE: only 2x2 size and 2x2 stride supported currently
-			out_size->w = 2 * t0_w;
-			out_size->h = 2 * t0_h;
-		} else {
-			out_size->w = ((pool_pad_w0 + t0_w + pool_pad_w1) -
-				       pool_size_w) / pool_stride_w + 1;
-			out_size->h = ((pool_pad_h0 + t0_h + pool_pad_h1) -
-				       pool_size_h) / pool_stride_h + 1;
-		}
-		// NOTE: No pooling in Z (depth) implemented yet!
-		out_size->z = t0_z;
-		// Number of channels preserved in pooling...
-		out_size->c = t0_c;
-	} else { // Bypass of max pooling
-		out_size->w = t0_w;
-		out_size->h = t0_h;
-		out_size->z = t0_z;
-		out_size->c = t0_c;
-	}
-	out_size->size = out_size->w * out_size->h * out_size->z * out_size->c;
-	out_size->size *= 2;
 }
 
 static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
