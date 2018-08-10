@@ -28,7 +28,7 @@
 
 /// @brief Convolution layer runs.
 /// @details Members within structure are rearranged by size to avoid requirements for 64-bits padding in the middle.
-typedef struct dmp_dv_kcmdraw_v0_conv_run_impl {
+typedef struct dmp_dv_kcmdraw_conv_v0_run_impl {
 	dmp_dv_kbuf weight_buf;  // Buffer with packed weights
 	__u32 conv_pad;          // Bits [7:0] = left padding, bits [15:8] = right padding, bits [23:16] = top padding, bits [31:24] = bottom padding
 	__u32 pool_pad;          // Bits [7:0] = left padding, bits [15:8] = right padding, bits [23:16] = top padding, bits [31:24] = bottom padding
@@ -48,11 +48,11 @@ typedef struct dmp_dv_kcmdraw_v0_conv_run_impl {
 	__u16 rectifi_en;        // Rectification, i.e. max(0, x) (NOTE: Can be applied after non-ReLU activation function)
 	__u16 lrn;               // Bits [0]: 1 = LRN enable, 0 = LRN disable, [1]: 1 = incl. power func, 0 = excl., [8:11]: x^2 scale factor log2
 	__u16 rsvd;              // padding to 64-bit size
-} dmp_dv_kcmdraw_v0_conv_run;
+} dmp_dv_kcmdraw_conv_v0_run;
 
 
 /// @brief Raw command for convolutional block version 0.
-typedef struct dmp_dv_kcmdraw_v0_impl {
+typedef struct dmp_dv_kcmdraw_conv_v0_impl {
 	__u32 size;                          // size of this structure
 	__u32 version;                       // version of this structure
 	dmp_dv_kbuf input_buf;               // Input buffer
@@ -65,8 +65,8 @@ typedef struct dmp_dv_kcmdraw_v0_impl {
 	__u16 c;                             // Input Channels
 	__u16 input_circular_offset;         // Input Depth circular offset
 	__u16 output_mode;                   // 0 = concat, 1 = elementwise add
-	dmp_dv_kcmdraw_v0_conv_run run[32];  // description of each run
-} dmp_dv_kcmdraw_v0;
+	dmp_dv_kcmdraw_conv_v0_run run[32];  // description of each run
+} dmp_dv_kcmdraw_conv_v0;
 
 
 /// @brief Raw command for fully connected block version 0.

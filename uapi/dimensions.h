@@ -92,7 +92,7 @@ static inline void init_conv_input_size_v0_4(
 
 /// @brief Assigns input size.
 static inline void init_conv_input_size_v0(
-    const dmp_dv_kcmdraw_v0 *cmd,
+    const dmp_dv_kcmdraw_conv_v0 *cmd,
     struct conv_data_size *in_size) {
   init_conv_input_size_v0_4(cmd->w, cmd->h, cmd->z, cmd->c, in_size);
 }
@@ -100,7 +100,7 @@ static inline void init_conv_input_size_v0(
 
 /// @brief Fills output size and weights size for layer configuration version 0.
 static void get_conv_output_size_v0(
-    dmp_dv_kcmdraw_v0_conv_run *run,
+    dmp_dv_kcmdraw_conv_v0_run *run,
     struct conv_data_size *in_size,
     struct conv_data_size *out_size,
     uint32_t *w_size) {
