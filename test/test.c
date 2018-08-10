@@ -10,9 +10,9 @@
 #include "ion.h"
 
 #define CMD_SIZE(N) \
-  sizeof(dmp_dv_kcmdraw_v0) - (32 - N) * sizeof(dmp_dv_kcmdraw_v0_conv_run)
+  sizeof(dmp_dv_kcmdraw_conv_v0) - (32 - N) * sizeof(dmp_dv_kcmdraw_conv_v0_run)
 
-dmp_dv_kcmdraw_v0 cmd0 = {
+dmp_dv_kcmdraw_conv_v0 cmd0 = {
     .size = CMD_SIZE(1),
     .version = 0,
     .topo = 0x1,
@@ -41,7 +41,7 @@ dmp_dv_kcmdraw_v0 cmd0 = {
         },
 };
 
-dmp_dv_kcmdraw_v0 cmd1 = {
+dmp_dv_kcmdraw_conv_v0 cmd1 = {
     .size = CMD_SIZE(2),
     .version = 0,
     .topo = 0x3,
@@ -85,7 +85,7 @@ dmp_dv_kcmdraw_v0 cmd1 = {
         },
 };
 
-dmp_dv_kcmdraw_v0 cmd2 = {
+dmp_dv_kcmdraw_conv_v0 cmd2 = {
     .size = CMD_SIZE(1),
     .version = 0,
     .topo = 0x1,
