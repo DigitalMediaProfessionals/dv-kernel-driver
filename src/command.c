@@ -273,7 +273,7 @@ static size_t conf_size(unsigned int topo)
 	       (MAX_NUM_RUNS - n) * sizeof(struct conv_run);
 }
 
-static uint16_t get_conv_tiles_v0(dmp_dv_kcmdraw_v0 *cmd)
+static uint16_t get_conv_tiles_v0(dmp_dv_kcmdraw_conv_v0 *cmd)
 {
 	int w, h, c, m, px, py, c_blocks, t;
 	int tw, ow, oh, os, ts_blk16, ts_blk128, ts_128, ts, uu;
@@ -324,21 +324,11 @@ static uint16_t get_conv_tiles_v0(dmp_dv_kcmdraw_v0 *cmd)
  * Command buffer size verification
  *
  **************************************/
-static void init_conv_input_size_v0(dmp_dv_kcmdraw_v0 *cmd,
-				    struct conv_data_size *in_size)
-{
-	in_size->w = cmd->w;
-	in_size->h = cmd->h;
-	in_size->z = cmd->z;
-	in_size->c = cmd->c;
-	in_size->size = cmd->w * cmd->h * cmd->z * cmd->c * 2;
-}
-
 static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 			      dmp_dv_kcmdraw __user *user_cmd, size_t size)
 {
 	struct dmp_cmb_list_entry *cmb_node;
-	dmp_dv_kcmdraw_v0 *cmd;
+	dmp_dv_kcmdraw_conv_v0 *cmd;
 	struct conv_configuration *conv;
 	size_t cmd_size, conv_len;
 	uint32_t *cmd_buf;
@@ -352,8 +342,8 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 	int ret;
 
 	// there should be at least one run
-	if (size < sizeof(dmp_dv_kcmdraw_v0) - 31 *
-	    sizeof(dmp_dv_kcmdraw_v0_conv_run))
+	if (size < sizeof(dmp_dv_kcmdraw_conv_v0) - 31 *
+	    sizeof(dmp_dv_kcmdraw_conv_v0_run))
 		return -EINVAL;
 
 	cmd = kmalloc(size, GFP_KERNEL);
@@ -365,8 +355,8 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 	}
 
 	runs = topo_num_runs(cmd->topo);
-	if (size < sizeof(dmp_dv_kcmdraw_v0) - (32 - runs) *
-	    sizeof(dmp_dv_kcmdraw_v0_conv_run)) {
+	if (size < sizeof(dmp_dv_kcmdraw_conv_v0) - (32 - runs) *
+	    sizeof(dmp_dv_kcmdraw_conv_v0_run)) {
 		kfree(cmd);
 		return -EINVAL;
 	}

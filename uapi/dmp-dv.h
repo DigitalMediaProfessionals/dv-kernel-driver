@@ -1,18 +1,18 @@
+// SPDX-License-Identifier: GPL-2.0 OR Apache-2.0
 /*
  *  DV700 kernel driver user interface
  *
  *  Copyright (C) 2018  Digital Media Professionals Inc.
  *
- * This software is licensed under the terms of the GNU General Public
- * License version 2, as published by the Free Software Foundation, and
- * may be copied, distributed, and modified under those terms.
+ * This software is dual licensed under the terms of Apache License, Version 2.0 OR
+ * the GNU General Public License version 2, as published by the Free Software Foundation,
+ * and may be copied, distributed, and modified under those terms.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- *
- */
+*/
 #pragma once
 
 #ifndef _UAPI_LINUX_DMP_DV_H
