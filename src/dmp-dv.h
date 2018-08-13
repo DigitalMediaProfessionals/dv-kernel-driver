@@ -31,6 +31,7 @@ struct dmp_cmb;
 
 extern int UNIFIED_BUFFER_SIZE;
 extern int MAX_CONV_KERNEL_SIZE;
+extern int MAX_FC_VECTOR_SIZE;
 
 struct dmp_cmb *dv_cmb_init(struct device *dev);
 void dv_cmb_finalize(struct device *dev, struct dmp_cmb *cmb);

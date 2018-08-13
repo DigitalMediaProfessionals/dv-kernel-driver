@@ -83,8 +83,8 @@ struct dv_cmd_work_item {
 };
 
 struct dmp_dev {
-	unsigned int bar_physical;
-	unsigned int bar_size;
+	phys_addr_t bar_physical;
+	size_t bar_size;
 	void *bar_logical;
 	int irq_addr;
 
@@ -433,6 +433,13 @@ static ssize_t max_kernel_size_show(struct device *dev,
 	return scnprintf(buf, PAGE_SIZE, "%d\n", MAX_CONV_KERNEL_SIZE);
 }
 
+static ssize_t max_fc_vector_size_show(struct device *dev,
+				    struct device_attribute *attr,
+				    char *buf)
+{
+	return scnprintf(buf, PAGE_SIZE, "%d\n", MAX_FC_VECTOR_SIZE);
+}
+
 static ssize_t drm_firmware_write(struct file *filp, struct kobject *kobj,
 				  struct bin_attribute *bin_attr,
 				  char *buf, loff_t pos, size_t count)
@@ -481,6 +488,7 @@ static DEVICE_ATTR_RO(fc_freq);
 static DEVICE_ATTR_RO(conv_kick_count);
 static DEVICE_ATTR_RO(ub_size);
 static DEVICE_ATTR_RO(max_kernel_size);
+static DEVICE_ATTR_RO(max_fc_vector_size);
 
 static struct attribute *drm_attrs[] = {
 	&dev_attr_conv_freq.attr,
@@ -488,6 +496,7 @@ static struct attribute *drm_attrs[] = {
 	&dev_attr_conv_kick_count.attr,
 	&dev_attr_ub_size.attr,
 	&dev_attr_max_kernel_size.attr,
+	&dev_attr_max_fc_vector_size.attr,
 	NULL
 };
 
@@ -623,6 +632,7 @@ static int drm_dev_remove(struct platform_device *pdev)
 		}
 
 		platform_set_drvdata(pdev, NULL);
+		kfree(drm_dev);
 	}
 
 	dev_dbg(&pdev->dev, "remove successful\n");
