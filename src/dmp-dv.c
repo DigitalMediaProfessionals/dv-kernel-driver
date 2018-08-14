@@ -632,7 +632,6 @@ static int drm_dev_remove(struct platform_device *pdev)
 		}
 
 		platform_set_drvdata(pdev, NULL);
-		kfree(drm_dev);
 	}
 
 	dev_dbg(&pdev->dev, "remove successful\n");
