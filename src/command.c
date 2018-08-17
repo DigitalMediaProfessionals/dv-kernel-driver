@@ -183,24 +183,32 @@ void dv_cmb_finalize(struct device *dev, struct dmp_cmb *cmb)
 	kfree(cmb);
 }
 
+// TODO: find out why uint32_t for addr and add appropriate comment if it was indented or fix it.
 static int get_dma_addr(struct device *dev, struct dmp_cmb *cmb,
-			dmp_dv_kbuf *buf, int is_weight, uint32_t *addr,
-			uint32_t *buf_size)
+			dmp_dv_kbuf *buf, uint32_t *addr, uint32_t *buf_size)
 {
 	struct dmp_dmabuf_hash_entry *obj;
 	struct scatterlist *sg;
 	int i, ret = 0;
 
-	// handle invalid fd
+	// Handle invalid fd
 	if (buf->fd < 0) {
 		*addr = 0xDEADBEEF;
 		*buf_size = 0;
 		return 0;
 	}
 
-	// find if the fd is already in the hash
+	if (buf->offs & 1) {  // check required alignment
+		pr_warning(DRM_DEV_NAME ": got unaligned offset %llu\n",
+			(unsigned long long)buf->offs);
+		return -EINVAL;
+	}
+
+	// Find if the fd is already in the hash
 	hash_for_each_possible (cmb->dmabuf_hash, obj, hash_node, buf->fd) {
 		if (obj->fd == buf->fd) {
+			if (obj->buf_size < buf->offs)
+				return -EINVAL;
 			*addr = obj->dma_addr + (uint32_t)buf->offs;
 			*buf_size = obj->buf_size - (uint32_t)buf->offs;
 			return 0;
@@ -223,7 +231,7 @@ static int get_dma_addr(struct device *dev, struct dmp_cmb *cmb,
 		ret = PTR_ERR(obj->attachment);
 		goto dma_buf_attach_fail;
 	}
-	obj->dir = (is_weight ? DMA_TO_DEVICE : DMA_BIDIRECTIONAL);
+	obj->dir = DMA_BIDIRECTIONAL;
 	obj->sgt = dma_buf_map_attachment(obj->attachment, obj->dir);
 	if (IS_ERR(obj->sgt)) {
 		ret = PTR_ERR(obj->sgt);
@@ -238,13 +246,27 @@ static int get_dma_addr(struct device *dev, struct dmp_cmb *cmb,
 	for_each_sg (obj->sgt->sgl, sg, obj->sgt->nents, i) {
 		obj->dma_addr = sg_dma_address(sg);
 		obj->buf_size = sg_dma_len(sg);
-		*addr = obj->dma_addr + (uint32_t)buf->offs;
-		*buf_size = obj->buf_size - (uint32_t)buf->offs;
+#ifdef CONFIG_ARCH_DMA_ADDR_T_64BIT
+		if (obj->dma_addr + obj->buf_size > 4294967296ull) {
+			pr_warning(DRM_DEV_NAME ": dma_addr=%llu buf_size=%llu lies in high memory\n",
+				(unsigned long long)obj->dma_addr, (unsigned long long)obj->buf_size);
+			ret = -1;
+			break;
+		}
+#endif
+		if (obj->buf_size < buf->offs) {
+			ret = -EINVAL;
+			break;
+		}
+		else {
+		    *addr = obj->dma_addr + (uint32_t)buf->offs;
+		    *buf_size = obj->buf_size - (uint32_t)buf->offs;
+		}
 	}
 
 	hash_add(cmb->dmabuf_hash, &obj->hash_node, obj->fd);
 
-	return 0;
+	return ret;
 
 dma_buf_invalid_nents:
 	dma_buf_unmap_attachment(obj->attachment, obj->sgt, obj->dir);
@@ -362,7 +384,7 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 	}
 
 	init_conv_input_size_v0(cmd, &conv_size);
-	ret = get_dma_addr(dev, cmb, &cmd->input_buf, 0, &input_base_addr,
+	ret = get_dma_addr(dev, cmb, &cmd->input_buf, &input_base_addr,
 			   &input_buf_size);
 	if (ret) {
 		kfree(cmd);
@@ -372,13 +394,13 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 		kfree(cmd);
 		return -EINVAL;
 	}
-	ret = get_dma_addr(dev, cmb, &cmd->output_buf, 0, &output_base_addr,
+	ret = get_dma_addr(dev, cmb, &cmd->output_buf, &output_base_addr,
 			   &output_buf_size);
 	if (ret) {
 		kfree(cmd);
 		return ret;
 	}
-	ret = get_dma_addr(dev, cmb, &cmd->eltwise_buf, 0, &eltwise_base_addr,
+	ret = get_dma_addr(dev, cmb, &cmd->eltwise_buf, &eltwise_base_addr,
 			   &eltwise_buf_size);
 	if (ret) {
 		kfree(cmd);
@@ -438,7 +460,7 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 			total_output_size += conv_size.size;
 			init_conv_input_size_v0(cmd, &conv_size);
 		}
-		ret = get_dma_addr(dev, cmb, &cmd->run[i].weight_buf, 1,
+		ret = get_dma_addr(dev, cmb, &cmd->run[i].weight_buf,
 		                   &weight_base_addr, &weight_buf_size);
 		if (ret) {
 			kfree(cmd);
@@ -564,19 +586,19 @@ static int dv_convert_fc_v0(struct device *dev, struct dmp_cmb *cmb,
 	if (copy_from_user(&cmd, user_cmd, size))
 		return -EFAULT;
 
-	ret = get_dma_addr(dev, cmb, &cmd.input_buf, 0, &input_base_addr,
+	ret = get_dma_addr(dev, cmb, &cmd.input_buf, &input_base_addr,
 			   &input_buf_size);
 	if (ret)
 		return ret;
 	if (input_buf_size < cmd.input_size * 2)
 		return -EINVAL;
-	ret = get_dma_addr(dev, cmb, &cmd.output_buf, 0, &output_base_addr,
+	ret = get_dma_addr(dev, cmb, &cmd.output_buf, &output_base_addr,
 			   &output_buf_size);
 	if (ret)
 		return ret;
 	if (output_buf_size < cmd.output_size * 2)
 		return -EINVAL;
-	ret = get_dma_addr(dev, cmb, &cmd.weight_buf, 1, &weight_base_addr,
+	ret = get_dma_addr(dev, cmb, &cmd.weight_buf, &weight_base_addr,
 			   &weight_buf_size);
 	if (ret)
 		return ret;
@@ -625,22 +647,52 @@ static int dv_convert_fc_v0(struct device *dev, struct dmp_cmb *cmb,
 
 	if (cmd.weight_fmt) {
 		struct dma_buf *dma_buf;
-		uint16_t *quant;
-		int i;
+		__u8 *quant_base;
+		__u16 *quant;
+		unsigned int i, n;
+		unsigned long page_num;
+		unsigned int page_offs;
+		unsigned int quants_left;
 
 		dma_buf = dma_buf_get(cmd.weight_buf.fd);
 		dma_buf_begin_cpu_access(dma_buf, DMA_BIDIRECTIONAL);
-		quant = dma_buf_kmap(dma_buf, 0);
-		if (!quant) {
+		page_num = cmd.weight_buf.offs >> PAGE_SHIFT;
+		page_offs = cmd.weight_buf.offs & (PAGE_SIZE - 1);
+		quants_left = (PAGE_SIZE - page_offs) >> 1;
+#if 0
+		pr_info(DRM_DEV_NAME ": cmd.weight_buf.offs=%llu page_num=%lu page_offs=%u quants_left=%u\n",
+			cmd.weight_buf.offs, page_num, page_offs, quants_left);
+#endif
+
+		quant_base = dma_buf_kmap(dma_buf, page_num);
+		if (!quant_base) {
+			pr_err(DRM_DEV_NAME ": dma_buf_kmap() failed\n");
+			dma_buf_end_cpu_access(dma_buf, DMA_BIDIRECTIONAL);
 			dma_buf_put(dma_buf);
 			return -ENOMEM;
 		}
-
-		cmd_buf[14] = 0x0013f7fc; // Write 256 words to 0x13
-		for (i = 0; i < 256; i++)
+		quant = (__u16*)(quant_base + page_offs);
+		cmd_buf[14] = 0x0013f7fc;  // write 256 words to 0x13
+		n = quants_left < 256 ? quants_left : 256;
+		for (i = 0; i < n; i++) {
 			cmd_buf[15 + i] = (0x21 << 24) | (i << 16) | quant[i];
+		}
+		dma_buf_kunmap(dma_buf, page_num, quant_base);
+		if (n < 256) {  // write remaining part from second page
+			quant_base = dma_buf_kmap(dma_buf, ++page_num);
+			if (!quant_base) {
+				pr_err(DRM_DEV_NAME ": dma_buf_kmap() failed\n");
+				dma_buf_end_cpu_access(dma_buf, DMA_BIDIRECTIONAL);
+				dma_buf_put(dma_buf);
+				return -ENOMEM;
+			}
+			quant = ((__u16*)quant_base) - n;
+			for (; i < 256; i++) {
+				cmd_buf[15 + i] = (0x21 << 24) | (i << 16) | quant[i];
+			}
+			dma_buf_kunmap(dma_buf, page_num, quant_base);
+		}
 
-		dma_buf_kunmap(dma_buf, 0, quant);
 		dma_buf_end_cpu_access(dma_buf, DMA_BIDIRECTIONAL);
 		dma_buf_put(dma_buf);
 	}
