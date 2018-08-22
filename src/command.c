@@ -183,7 +183,7 @@ void dv_cmb_finalize(struct device *dev, struct dmp_cmb *cmb)
 	kfree(cmb);
 }
 
-// TODO: find out why uint32_t for addr and add appropriate comment if it was indented or fix it.
+// addr is uint32_t since the HW can only use 32-bit address
 static int get_dma_addr(struct device *dev, struct dmp_cmb *cmb,
 			dmp_dv_kbuf *buf, uint32_t *addr, uint32_t *buf_size)
 {
@@ -248,8 +248,10 @@ static int get_dma_addr(struct device *dev, struct dmp_cmb *cmb,
 		obj->buf_size = sg_dma_len(sg);
 #ifdef CONFIG_ARCH_DMA_ADDR_T_64BIT
 		if (obj->dma_addr + obj->buf_size > 4294967296ull) {
-			pr_warning(DRM_DEV_NAME ": dma_addr=%llu buf_size=%llu lies in high memory\n",
-				(unsigned long long)obj->dma_addr, (unsigned long long)obj->buf_size);
+			pr_warning(DRM_DEV_NAME
+				": dma_addr=%llu buf_size=%llu lies in high memory\n",
+				(unsigned long long)obj->dma_addr,
+				(unsigned long long)obj->buf_size);
 			ret = -1;
 			break;
 		}
@@ -659,10 +661,6 @@ static int dv_convert_fc_v0(struct device *dev, struct dmp_cmb *cmb,
 		page_num = cmd.weight_buf.offs >> PAGE_SHIFT;
 		page_offs = cmd.weight_buf.offs & (PAGE_SIZE - 1);
 		quants_left = (PAGE_SIZE - page_offs) >> 1;
-#if 0
-		pr_info(DRM_DEV_NAME ": cmd.weight_buf.offs=%llu page_num=%lu page_offs=%u quants_left=%u\n",
-			cmd.weight_buf.offs, page_num, page_offs, quants_left);
-#endif
 
 		quant_base = dma_buf_kmap(dma_buf, page_num);
 		if (!quant_base) {

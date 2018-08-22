@@ -71,20 +71,20 @@ typedef struct dmp_dv_kcmdraw_conv_v0_impl {
 
 /// @brief Raw command for fully connected block version 0.
 typedef struct dmp_dv_kcmdraw_fc_v0_impl {
-  __u32 size;              // size of this structure
-  __u32 version;           // version of this structure
-  dmp_dv_kbuf weight_buf;  // Buffer with packed weights
-  dmp_dv_kbuf input_buf;   // Input buffer
-  dmp_dv_kbuf output_buf;  // Output buffer
+	__u32 size;              // size of this structure
+	__u32 version;           // version of this structure
+	dmp_dv_kbuf weight_buf;  // Buffer with packed weights
+	dmp_dv_kbuf input_buf;   // Input buffer
+	dmp_dv_kbuf output_buf;  // Output buffer
 
-  __u16 input_size;        // Size of the input in elements
-  __u16 output_size;       // Size of the output in elements
+	__u16 input_size;        // Size of the input in elements
+	__u16 output_size;       // Size of the output in elements
 
-  __u16 weight_fmt;        // Weights format: 0 = half-float unquantized, 1 = 8-bit quantized
+	__u16 weight_fmt;        // Weights format: 0 = half-float unquantized, 1 = 8-bit quantized
 
-  __u16 actfunc;           // Activation Function: 0 = None, 1 = Tanh, 2 = Leaky ReLU, 3 = Sigmoid, 4 = PReLU, 5 = ELU, 6 = ReLU6
-  __u16 actfunc_param;     // Leaky ReLU parameter (in FP16 format), 0 = non-leaky
-  __u16 rsvd[3];           // padding to 64-bit size
+	__u16 actfunc;           // Activation Function: 0 = None, 1 = Tanh, 2 = Leaky ReLU, 3 = Sigmoid, 4 = PReLU, 5 = ELU, 6 = ReLU6
+	__u16 actfunc_param;     // Leaky ReLU parameter (in FP16 format), 0 = non-leaky
+	__u16 rsvd[3];           // padding to 64-bit size
 } dmp_dv_kcmdraw_fc_v0;
 
 
