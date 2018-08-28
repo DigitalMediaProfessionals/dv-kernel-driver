@@ -14,30 +14,14 @@
  *
  */
 
-#ifdef DMP_ZC706
 #define USE_DEVTREE
 // map {0=CNV,1=FC} to irq Offset:
-#ifdef USE_DEVTREE
-static int sd2i_map[2] = { 0, 2 };
-#else
-static int sd2i_map[2] = { 61, 63 };
+#ifndef USE_DEVTREE
+static int irq_no[2] = { 48, 49 };
+static unsigned int reg_base = 0x80000000;
 #endif
-// map {0=CNV,1=FC} to regBaseAddr:
-static unsigned int sd2rb[2] = { 0x43c00000, 0x43c20000 };
-#endif
-#ifdef DMP_ARRIA10
-//#define USE_DEVTREE
-// map {0=CNV,1=FC} to irq Offset:
-#ifdef USE_DEVTREE
-static int sd2i_map[2] = { 2, 3 };
-#else
-static int sd2i_map[2] = { 53, 54 };
-#endif
-// map {0=CNV,1=FC} to regBaseAddr:
-static unsigned int sd2rb[2] = { 0xff210000, 0xff200000 };
-#endif
-// map {0=CNV,1=FC} to regSize:
-static unsigned int sd2rs[2] = { 0x2000, 0x100 };
+static unsigned int reg_offset[2] = { 0x0, 0x1000 };
+static unsigned int reg_size[2] = { 0x1000, 0x1000 };
 static int irq_addr[2] = { 0x420, 0x20 };
 
 static const char *subdev_name[2] = { "conv", "fc" };
@@ -278,120 +262,6 @@ static struct file_operations drm_file_operations = {
 	.unlocked_ioctl = drm_ioctl,
 };
 
-int drm_register_chrdev(struct drm_dev *drm_dev)
-{
-	int err = 0, rIRQ = 0, i = 0;
-	struct device *dev;
-	unsigned int driver_major;
-
-	dev_dbg(drm_dev->dev, "drm_register_chrdev\n");
-
-	err = alloc_chrdev_region(&drm_dev->devt, 0, DRM_NUM_SUBDEV,
-				  DRM_DEV_NAME);
-	if (err) {
-		dev_err(drm_dev->dev, "alloc_chrdev_region fail\n");
-		goto fail_alloc_chrdev_region;
-	}
-
-	dddrm_class = class_create(THIS_MODULE, DRM_DEV_NAME);
-	if (IS_ERR(dddrm_class)) {
-		err = PTR_ERR(dddrm_class);
-		dev_err(drm_dev->dev, "class_create fail\n");
-		goto fail_class_create;
-	}
-
-	driver_major = MAJOR(drm_dev->devt);
-
-	// create char device:
-	cdev_init(&drm_dev->cdev, &drm_file_operations);
-	err = cdev_add(&drm_dev->cdev, drm_dev->devt, DRM_NUM_SUBDEV);
-	if (err) {
-		dev_err(drm_dev->dev, "cdev_add fail\n");
-		goto fail_cdev_add;
-	}
-
-	for (i = 0; i < DRM_NUM_SUBDEV; i++) {
-		// Create device:
-		dev = device_create(dddrm_class, NULL, MKDEV(driver_major, i),
-				    drm_dev, "dv_%s", subdev_name[i]);
-		if (IS_ERR(dev)) {
-			err = PTR_ERR(dev);
-			dev_err(drm_dev->dev, "device_create fail %d\n", i);
-			goto fail_device_init;
-		}
-
-		rIRQ = drm_dev->subdev[i].irqno;
-		err = request_irq(rIRQ, handle_int, IRQF_SHARED, DRM_DEV_NAME,
-				  &(drm_dev->subdev[i]));
-		if (err) {
-			device_destroy(dddrm_class, MKDEV(driver_major, i));
-			dev_err(drm_dev->dev,
-				"request_irq FAIL: IRQ=%d ERR=%d\n", rIRQ, err);
-			goto fail_device_init;
-		}
-
-		// initialize:
-		init_waitqueue_head(&(drm_dev->subdev[i].wait_queue));
-		spin_lock_init(&(drm_dev->subdev[i].int_exclusive));
-		spin_lock_init(&(drm_dev->subdev[i].wq_exclusive));
-
-		drm_dev->subdev[i].wq = alloc_ordered_workqueue(
-			"dv_wq_%s", 0, subdev_name[i]);
-		if (!drm_dev->subdev[i].wq) {
-			err = -ENOMEM;
-			device_destroy(dddrm_class, MKDEV(driver_major, i));
-			dev_err(drm_dev->dev,
-				"work queue allocation fail %d\n", i);
-			goto fail_device_init;
-		}
-
-		drm_dev->subdev[i].init_done = 1;
-	}
-
-	return 0;
-
-fail_device_init:
-	for (i = 0; i < DRM_NUM_SUBDEV; i++) {
-		if (drm_dev->subdev[i].init_done) {
-			destroy_workqueue(drm_dev->subdev[i].wq);
-			free_irq(drm_dev->subdev[i].irqno,
-				 &(drm_dev->subdev[i]));
-			device_destroy(dddrm_class, MKDEV(driver_major, i));
-			drm_dev->subdev[i].init_done = 0;
-		}
-	}
-	cdev_del(&drm_dev->cdev);
-fail_cdev_add:
-	class_destroy(dddrm_class);
-fail_class_create:
-	unregister_chrdev_region(drm_dev->devt, DRM_NUM_SUBDEV);
-fail_alloc_chrdev_region:
-
-	return err;
-}
-
-int drm_unregister_chrdev(struct drm_dev *drm_dev)
-{
-	int i;
-	unsigned int driver_major = MAJOR(drm_dev->devt);
-	dev_dbg(drm_dev->dev, "drm_unregister_chrdev\n");
-
-	for (i = 0; i < DRM_NUM_SUBDEV; i++) {
-		if (drm_dev->subdev[i].init_done) {
-			destroy_workqueue(drm_dev->subdev[i].wq);
-			free_irq(drm_dev->subdev[i].irqno,
-				 &(drm_dev->subdev[i]));
-			device_destroy(dddrm_class, MKDEV(driver_major, i));
-			drm_dev->subdev[i].init_done = 0;
-		}
-	}
-
-	cdev_del(&drm_dev->cdev);
-	class_destroy(dddrm_class);
-	unregister_chrdev_region(drm_dev->devt, DRM_NUM_SUBDEV);
-	return 0;
-}
-
 static ssize_t conv_freq_show(struct device *dev,
 			      struct device_attribute *attr,
 			      char *buf)
@@ -484,18 +354,23 @@ static ssize_t drm_firmware_write(struct file *filp, struct kobject *kobj,
 }
 
 static DEVICE_ATTR_RO(conv_freq);
-static DEVICE_ATTR_RO(fc_freq);
 static DEVICE_ATTR_RO(conv_kick_count);
 static DEVICE_ATTR_RO(ub_size);
 static DEVICE_ATTR_RO(max_kernel_size);
+
+static DEVICE_ATTR_RO(fc_freq);
 static DEVICE_ATTR_RO(max_fc_vector_size);
 
-static struct attribute *drm_attrs[] = {
+static struct attribute *drm_conv_attrs[] = {
 	&dev_attr_conv_freq.attr,
-	&dev_attr_fc_freq.attr,
 	&dev_attr_conv_kick_count.attr,
 	&dev_attr_ub_size.attr,
 	&dev_attr_max_kernel_size.attr,
+	NULL
+};
+
+static struct attribute *drm_fc_attrs[] = {
+	&dev_attr_fc_freq.attr,
 	&dev_attr_max_fc_vector_size.attr,
 	NULL
 };
@@ -515,12 +390,153 @@ static struct bin_attribute *drm_bin_attrs[] = {
 	NULL
 };
 
+static const struct attribute_group drm_conv_attr_group = {
+	.attrs = drm_conv_attrs,
+	.bin_attrs = drm_bin_attrs,
+};
+
+static const struct attribute_group drm_fc_attr_group = {
+	.attrs = drm_fc_attrs,
+};
+
+static const struct attribute_group *drm_conv_attr_groups[] = {
+	&drm_conv_attr_group,
+	NULL
+};
+
+static const struct attribute_group *drm_fc_attr_groups[] = {
+	&drm_fc_attr_group,
+	NULL
+};
+
+static const struct attribute_group **drm_attr_groups[DRM_NUM_SUBDEV] = {
+	drm_conv_attr_groups,
+	drm_fc_attr_groups,
+};
+
+int drm_register_chrdev(struct drm_dev *drm_dev)
+{
+	int err = 0, rIRQ = 0, i = 0;
+	struct device *dev;
+	unsigned int driver_major;
+
+	dev_dbg(drm_dev->dev, "drm_register_chrdev\n");
+
+	err = alloc_chrdev_region(&drm_dev->devt, 0, DRM_NUM_SUBDEV,
+				  DRM_DEV_NAME);
+	if (err) {
+		dev_err(drm_dev->dev, "alloc_chrdev_region fail\n");
+		goto fail_alloc_chrdev_region;
+	}
+
+	dddrm_class = class_create(THIS_MODULE, DRM_DEV_NAME);
+	if (IS_ERR(dddrm_class)) {
+		err = PTR_ERR(dddrm_class);
+		dev_err(drm_dev->dev, "class_create fail\n");
+		goto fail_class_create;
+	}
+
+	driver_major = MAJOR(drm_dev->devt);
+
+	// create char device:
+	cdev_init(&drm_dev->cdev, &drm_file_operations);
+	err = cdev_add(&drm_dev->cdev, drm_dev->devt, DRM_NUM_SUBDEV);
+	if (err) {
+		dev_err(drm_dev->dev, "cdev_add fail\n");
+		goto fail_cdev_add;
+	}
+
+	for (i = 0; i < DRM_NUM_SUBDEV; i++) {
+		// Create device:
+		dev = device_create_with_groups(dddrm_class, NULL,
+			MKDEV(driver_major, i), drm_dev, drm_attr_groups[i],
+			"dv_%s", subdev_name[i]);
+		if (IS_ERR(dev)) {
+			err = PTR_ERR(dev);
+			dev_err(drm_dev->dev, "device_create fail %d\n", i);
+			goto fail_device_init;
+		}
+
+		rIRQ = drm_dev->subdev[i].irqno;
+		err = request_irq(rIRQ, handle_int, IRQF_SHARED, DRM_DEV_NAME,
+				  &(drm_dev->subdev[i]));
+		if (err) {
+			device_destroy(dddrm_class, MKDEV(driver_major, i));
+			dev_err(drm_dev->dev,
+				"request_irq FAIL: IRQ=%d ERR=%d\n", rIRQ, err);
+			goto fail_device_init;
+		}
+
+		// initialize:
+		init_waitqueue_head(&(drm_dev->subdev[i].wait_queue));
+		spin_lock_init(&(drm_dev->subdev[i].int_exclusive));
+		spin_lock_init(&(drm_dev->subdev[i].wq_exclusive));
+
+		drm_dev->subdev[i].wq = alloc_ordered_workqueue(
+			"dv_wq_%s", 0, subdev_name[i]);
+		if (!drm_dev->subdev[i].wq) {
+			err = -ENOMEM;
+			device_destroy(dddrm_class, MKDEV(driver_major, i));
+			dev_err(drm_dev->dev,
+				"work queue allocation fail %d\n", i);
+			goto fail_device_init;
+		}
+
+		drm_dev->subdev[i].init_done = 1;
+	}
+
+	return 0;
+
+fail_device_init:
+	for (i = 0; i < DRM_NUM_SUBDEV; i++) {
+		if (drm_dev->subdev[i].init_done) {
+			destroy_workqueue(drm_dev->subdev[i].wq);
+			free_irq(drm_dev->subdev[i].irqno,
+				 &(drm_dev->subdev[i]));
+			device_destroy(dddrm_class, MKDEV(driver_major, i));
+			drm_dev->subdev[i].init_done = 0;
+		}
+	}
+	cdev_del(&drm_dev->cdev);
+fail_cdev_add:
+	class_destroy(dddrm_class);
+fail_class_create:
+	unregister_chrdev_region(drm_dev->devt, DRM_NUM_SUBDEV);
+fail_alloc_chrdev_region:
+
+	return err;
+}
+
+int drm_unregister_chrdev(struct drm_dev *drm_dev)
+{
+	int i;
+	unsigned int driver_major = MAJOR(drm_dev->devt);
+	dev_dbg(drm_dev->dev, "drm_unregister_chrdev\n");
+
+	for (i = 0; i < DRM_NUM_SUBDEV; i++) {
+		if (drm_dev->subdev[i].init_done) {
+			destroy_workqueue(drm_dev->subdev[i].wq);
+			free_irq(drm_dev->subdev[i].irqno,
+				 &(drm_dev->subdev[i]));
+			device_destroy(dddrm_class, MKDEV(driver_major, i));
+			drm_dev->subdev[i].init_done = 0;
+		}
+	}
+
+	cdev_del(&drm_dev->cdev);
+	class_destroy(dddrm_class);
+	unregister_chrdev_region(drm_dev->devt, DRM_NUM_SUBDEV);
+	return 0;
+}
+
 static int drm_dev_probe(struct platform_device *pdev)
 {
 	int i = 0, err = 0;
 	struct drm_dev *drm_dev;
 #ifdef USE_DEVTREE
-	struct device_node *devNode;
+	struct device_node *dev_node, *parent_node;
+	u32 addr_cells;
+	unsigned int reg_base, reg_index;
 #endif
 
 	dev_dbg(&pdev->dev, "probe begin\n");
@@ -542,26 +558,28 @@ static int drm_dev_probe(struct platform_device *pdev)
 	}
 
 #ifdef USE_DEVTREE
-	devNode = of_find_compatible_node(NULL, NULL, "DMP_drm,DMP_drm");
-	if (devNode == NULL) {
-		err = -ENODEV;
-		dev_err(&pdev->dev, "no compatible node!\n");
-		goto fail_dma_set_mask;
-	} else {
-		of_node_put(devNode);
+	dev_node = pdev->dev.of_node;
+	parent_node = of_get_parent(dev_node);
+	if (parent_node) {
+		of_property_read_u32(parent_node, "#address-cells", &addr_cells);
+		reg_index = addr_cells - 1;
+		of_node_put(parent_node);
 	}
+	else {
+		reg_index = 0;
+	}
+	of_property_read_u32_index(dev_node, "reg", reg_index, &reg_base);
 #endif
 
 	for (i = 0; i < DRM_NUM_SUBDEV; i++) {
 #ifdef USE_DEVTREE
-		drm_dev->subdev[i].irqno = of_irq_get(devNode, sd2i_map[i]);
-// NOTE: we could(should) get the reg. address by this method too ...
+		drm_dev->subdev[i].irqno = of_irq_get(dev_node, i);
 #else
-		drm_dev->subdev[i].irqno = sd2i_map[i];
+		drm_dev->subdev[i].irqno = irq_no[i];
 #endif
 
-		drm_dev->subdev[i].bar_physical = sd2rb[i];
-		drm_dev->subdev[i].bar_size = sd2rs[i];
+		drm_dev->subdev[i].bar_physical = reg_base + reg_offset[i];
+		drm_dev->subdev[i].bar_size = reg_size[i];
 		drm_dev->subdev[i].bar_logical =
 			ioremap_nocache(drm_dev->subdev[i].bar_physical,
 					drm_dev->subdev[i].bar_size);
@@ -609,7 +627,6 @@ fail_get_iomap:
 
 fail_dma_set_mask:
 	platform_set_drvdata(pdev, NULL);
-	kfree(drm_dev);
 
 fail_probe_kzalloc:
 	return err;
@@ -638,6 +655,13 @@ static int drm_dev_remove(struct platform_device *pdev)
 	return 0;
 }
 
+#ifdef USE_DEVTREE
+static const struct of_device_id drm_of_ids[] = {
+	{ .compatible = "DMP_drm,DMP_drm" },
+	{ }
+};
+#endif
+
 static struct platform_driver drm_platform_driver = {
 	.probe = drm_dev_probe,
 	.remove = drm_dev_remove,
@@ -645,24 +669,16 @@ static struct platform_driver drm_platform_driver = {
 		{
 			.name = DRM_DEV_NAME,
 			.owner = THIS_MODULE,
+#ifdef USE_DEVTREE
+			.of_match_table = drm_of_ids,
+#endif
 		},
 };
 
+#ifndef USE_DEVTREE
 static void drm_dev_release(struct device *dev)
 {
 }
-
-static u64 drm_dma_mask;
-
-static const struct attribute_group drm_attr_group = {
-	.attrs = drm_attrs,
-	.bin_attrs = drm_bin_attrs,
-};
-
-static const struct attribute_group *drm_attr_groups[] = {
-	&drm_attr_group,
-	NULL
-};
 
 static struct platform_device drm_platform_device = {
 	.name = DRM_DEV_NAME,
@@ -671,11 +687,12 @@ static struct platform_device drm_platform_device = {
 	.resource = NULL,
 	.dev =
 		{
-			.dma_mask = &drm_dma_mask,
-			.groups = drm_attr_groups,
+			.coherent_dma_mask = DMA_BIT_MASK(32),
+			.dma_mask = &drm_platform_device.dev.coherent_dma_mask,
 			.release = drm_dev_release,
 		},
 };
+#endif
 
 static int __init drm_init(void)
 {
@@ -684,16 +701,22 @@ static int __init drm_init(void)
 	if (ret)
 		return ret;
 
+#ifndef USE_DEVTREE
 	ret = platform_device_register(&drm_platform_device);
 	if (ret) {
 		platform_driver_unregister(&drm_platform_driver);
+		return ret;
 	}
-	return ret;
+#endif
+
+	return 0;
 }
 
 static void __exit drm_exit(void)
 {
+#ifndef USE_DEVTREE
 	platform_device_unregister(&drm_platform_device);
+#endif
 	platform_driver_unregister(&drm_platform_driver);
 }
 
