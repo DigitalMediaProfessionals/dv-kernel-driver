@@ -15,16 +15,6 @@
  */
 
 #define USE_DEVTREE
-// map {0=CNV,1=FC} to irq Offset:
-#ifndef USE_DEVTREE
-static int irq_no[2] = { 48, 49 };
-static unsigned int reg_base = 0x80000000;
-#endif
-static unsigned int reg_offset[2] = { 0x0, 0x1000 };
-static unsigned int reg_size[2] = { 0x1000, 0x1000 };
-static int irq_addr[2] = { 0x420, 0x20 };
-
-static const char *subdev_name[2] = { "conv", "fc" };
 
 #include <linux/device.h>
 #include <linux/platform_device.h>
@@ -58,6 +48,19 @@ static const char *subdev_name[2] = { "conv", "fc" };
 #include "../uapi/dmp-dv.h"
 
 #define REG_IO_ADDR(DV, OF) ((void __iomem *)(DV->bar_logical) + OF)
+
+#ifndef USE_DEVTREE
+static int irq_no[2] = { 48, 49 };
+static unsigned int reg_base = 0x80000000;
+#endif
+static unsigned int reg_offset[2] = { 0x0, 0x1000 };
+static unsigned int reg_size[2] = { 0x1000, 0x1000 };
+static int irq_addr[2] = { 0x420, 0x20 };
+static const char *subdev_name[2] = { "conv", "fc" };
+
+uint32_t UNIFIED_BUFFER_SIZE = 640 * 1024;
+uint32_t MAX_CONV_KERNEL_SIZE = 7;
+uint32_t MAX_FC_VECTOR_SIZE = 16384;
 
 struct dv_cmd_work_item {
 	struct dmp_dev_private *dev_pri;
@@ -569,6 +572,10 @@ static int drm_dev_probe(struct platform_device *pdev)
 		reg_index = 0;
 	}
 	of_property_read_u32_index(dev_node, "reg", reg_index, &reg_base);
+	// Try to read device dependent properties
+	of_property_read_u32(dev_node, "ubuf-size", &UNIFIED_BUFFER_SIZE);
+	of_property_read_u32(dev_node, "max-conv-size", &MAX_CONV_KERNEL_SIZE);
+	of_property_read_u32(dev_node, "max-fc-vector", &MAX_FC_VECTOR_SIZE);
 #endif
 
 	for (i = 0; i < DRM_NUM_SUBDEV; i++) {

@@ -30,11 +30,6 @@
 
 #define REG_IO_ADDR(BAR, OF) ((void __iomem *)(BAR) + OF)
 
-// TODO: get this from HW
-int UNIFIED_BUFFER_SIZE = 640 * 1024;
-int MAX_CONV_KERNEL_SIZE = 7;
-int MAX_FC_VECTOR_SIZE = 16384;
-
 struct dmp_cmb_list_entry {
 	dma_addr_t physical;
 	void *logical;
