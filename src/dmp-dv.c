@@ -664,7 +664,7 @@ static int drm_dev_remove(struct platform_device *pdev)
 
 #ifdef USE_DEVTREE
 static const struct of_device_id drm_of_ids[] = {
-	{ .compatible = "DMP_drm,DMP_drm" },
+	{ .compatible = "dmp,dv700" },
 	{ }
 };
 #endif
