@@ -320,7 +320,7 @@ static uint16_t get_conv_tiles_v0(dmp_dv_kcmdraw_conv_v0 *cmd)
 	t = 0;
 	for (; t < w;) {
 		++t;
-		tw = (w / t + (w % t ? 1 : 0)) + px - 1; // width of tile
+		tw = (w / t + (w % t ? 1 : 0)) + (max(px, py) | 1) - 1;  // width of tile
 		ow = get_conv_out_width(tw, px, pad[0], pad[1], stride[0]);
 		oh = get_conv_out_width(h, py, pad[2], pad[3], stride[1]);
 		os = ow * oh * min(8, m); // output buffer size
