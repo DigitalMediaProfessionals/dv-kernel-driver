@@ -576,7 +576,7 @@ static int drm_dev_probe(struct platform_device *pdev)
 	// Try to read device dependent properties
 	UNIFIED_BUFFER_SIZE = 0;
 	of_property_read_u32(dev_node, "ubuf-size", &UNIFIED_BUFFER_SIZE);
-	if ((!UNIFIED_BUFFER_SIZE) || (UNIFIED_BUFFER_SIZE > 4194303)) {  // in KBytes
+	if ((!UNIFIED_BUFFER_SIZE) || (UNIFIED_BUFFER_SIZE > 2097151)) {  // in KBytes
 		pr_warning(DRM_DEV_NAME ": Detected suspicious ubuf-size value %u KB in the device tree, using default %u KB instead",
 			   UNIFIED_BUFFER_SIZE, DEF_UNIFIED_BUFFER_SIZE_KB);
 	}
