@@ -63,7 +63,7 @@ static inline int get_conv_out_width(int width, int kx, int pad_left, int pad_ri
 /// @param ub_in_bytes Size in bytes required in unified buffer for input.
 /// @param ub_out_bytes Size in bytes required in unified buffer for output.
 static uint16_t get_conv_tiles(int w, int h, int c, int kx, int ky, int m,
-			       int pad[4], int stride[2],
+			       const int pad[4], const int stride[2],
 			       int ub_size, int *ub_in_size, int *ub_out_size)
 {
 	int t, c_blocks, tw, ow, oh, os, ts_blk16, ts_blk128, ts_128, ts, uu;
