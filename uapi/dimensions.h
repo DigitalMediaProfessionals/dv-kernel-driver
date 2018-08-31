@@ -58,62 +58,78 @@ static inline int get_conv_out_width(int width, int kx, int pad_left, int pad_ri
 }
 
 
+/// @brief Returns number of tiles required to be able to execute given configuration with the provided unified buffer size.
+/// @param ub_size Unified buffer size.
+/// @param ub_in_bytes Size in bytes required in unified buffer for input.
+/// @param ub_out_bytes Size in bytes required in unified buffer for output.
+static uint16_t get_conv_tiles(int w, int h, int c, int kx, int ky, int m,
+			       int pad[4], int stride[2],
+			       int ub_size, int *ub_in_size, int *ub_out_size)
+{
+	int t, c_blocks, tw, ow, oh, os, ts_blk16, ts_blk128, ts_128, ts, uu;
+
+	c_blocks = (c >> 3) + (c & 7 ? 1 : 0);
+
+	t = 0;
+	while (t < w) {
+		++t;
+		tw = (w / t + (w % t ? 1 : 0)) + ((kx > ky ? kx : ky) | 1) - 1;  // width of a tile
+		ow = get_conv_out_width(tw, kx, pad[0], pad[1], stride[0]);
+		oh = get_conv_out_width(h, ky, pad[2], pad[3], stride[1]);
+		os = ow * oh * (m < 8 ? m : 8);  // output buffer size
+		ts_blk16 = tw * h * (c < 8 ? c : 8);  // tile size for a segment
+		ts_blk128 = (ts_blk16 >> 3) + (ts_blk16 & 7 ? 1 : 0);
+		ts_blk128 += (2 - ts_blk128) & 15;
+		ts_128 = ts_blk128 * c_blocks;
+		ts_128 += (0 - ts_128) & 15;
+		ts = ts_128 << 3;  // input tile size in UBUF (in float16)
+		uu = ts + os;  // unified buffer utilization
+		if ((uu << 1) <= ub_size) {
+			*ub_in_size = ts;
+			*ub_out_size = os;
+			return (uint16_t)t;
+		}
+	}
+
+	*ub_in_size = 0;
+	*ub_out_size = 0;
+
+	return 0;
+}
+
+
 /// @brief Returns number of tiles required for given command execution.
 /// @param cmd Command for execution.
 /// @param ubuf_size Unified buffer size.
-/// @param ts_final Size in bytes in the unified buffer required for an input tile.
-/// @param os_final Size in bytes in the unified buffer required for an output tile.
 /// @return Non-zero on success, 0 when the layer dimensions are too large.
-static uint16_t get_conv_tiles_v0(dmp_dv_kcmdraw_conv_v0 *cmd, int ubuf_size,
-				  int *ts_final, int *os_final)
+static uint16_t get_conv_tiles_v0(dmp_dv_kcmdraw_conv_v0 *cmd, int ub_size)
 {
-	int w, h, c, m, px, py, c_blocks, t;
-	int tw, ow, oh, os, ts_blk16, ts_blk128, ts_128, ts, uu;
+	int w, h, c, m, kx, ky;
 	int pad[4], stride[2];
+	int ub_in_size, ub_out_size;
 
-	if (topo_num_runs(cmd->topo) > 1)
+	if (topo_num_runs(cmd->topo) > 1) {
 		return 1;
-	if (cmd->run[0].conv_enable & 2 || !cmd->run[0].conv_enable)
+	}
+	if ((cmd->run[0].conv_enable & 2) || (!cmd->run[0].conv_enable)) {
 		return 1;
+	}
 
 	w = cmd->w;
 	h = cmd->h;
 	c = cmd->c;
 	m = cmd->run[0].m;
-	px = cmd->run[0].p & 0xFF;
-	py = (cmd->run[0].p >> 8) & 0xFF;
+	kx = cmd->run[0].p & 0xFF;
+	ky = (cmd->run[0].p & 0xFF00) ? (cmd->run[0].p & 0xFF00) >> 8 : kx;
 	pad[0] = cmd->run[0].conv_pad & 0xFF;
 	pad[1] = (cmd->run[0].conv_pad >> 8) & 0xFF;
 	pad[2] = (cmd->run[0].conv_pad >> 16) & 0xFF;
 	pad[3] = (cmd->run[0].conv_pad >> 24) & 0xFF;
 	stride[0] = cmd->run[0].conv_stride & 0xFF;
 	stride[1] = (cmd->run[0].conv_stride >> 8) & 0xFF;
-	c_blocks = (c >> 3) + (c & 7 ? 1 : 0);
 
-	t = 0;
-	for (; t < w;) {
-		++t;
-		tw = (w / t + (w % t ? 1 : 0)) + (max(px, py) | 1) - 1;  // width of tile
-		ow = get_conv_out_width(tw, px, pad[0], pad[1], stride[0]);
-		oh = get_conv_out_width(h, py, pad[2], pad[3], stride[1]);
-		os = ow * oh * min(8, m); // output buffer size
-		ts_blk16 = tw * h * min(8, c); // tile size for a segment
-		ts_blk128 = (ts_blk16 >> 3) + (ts_blk16 & 7 ? 1 : 0);
-		ts_blk128 += (2 - ts_blk128) & 15;
-		ts_128 = ts_blk128 * c_blocks;
-		ts_128 += (0 - ts_128) & 15;
-		ts = ts_128 << 3; // input tile size in UBUF (in float16)
-		uu = ts + os; // unified buffer utilization
-		if (uu * 2 <= ubuf_size) {
-			*ts_final = ts;
-			*os_final = os;
-			return t;
-		}
-	}
-
-	*ts_final = 0;
-	*os_final = 0;
-	return 0;
+	return get_conv_tiles(w, h, c, kx, ky, m, pad, stride,
+			      ub_size, &ub_in_size, &ub_out_size);
 }
 
 

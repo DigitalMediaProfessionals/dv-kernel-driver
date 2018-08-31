@@ -58,7 +58,8 @@ static unsigned int reg_size[2] = { 0x1000, 0x1000 };
 static int irq_addr[2] = { 0x420, 0x20 };
 static const char *subdev_name[2] = { "conv", "fc" };
 
-uint32_t UNIFIED_BUFFER_SIZE = 640 * 1024;
+#define DEF_UNIFIED_BUFFER_SIZE_KB 640
+uint32_t UNIFIED_BUFFER_SIZE = DEF_UNIFIED_BUFFER_SIZE_KB << 10;
 uint32_t MAX_CONV_KERNEL_SIZE = 7;
 uint32_t MAX_FC_VECTOR_SIZE = 16384;
 
@@ -573,7 +574,13 @@ static int drm_dev_probe(struct platform_device *pdev)
 	}
 	of_property_read_u32_index(dev_node, "reg", reg_index, &reg_base);
 	// Try to read device dependent properties
+	UNIFIED_BUFFER_SIZE = 0;
 	of_property_read_u32(dev_node, "ubuf-size", &UNIFIED_BUFFER_SIZE);
+	if ((!UNIFIED_BUFFER_SIZE) || (UNIFIED_BUFFER_SIZE > 4194303)) {  // in KBytes
+		pr_warning(DRM_DEV_NAME ": Detected suspicious ubuf-size value %u KB in the device tree, using default %u KB instead",
+			   UNIFIED_BUFFER_SIZE, DEF_UNIFIED_BUFFER_SIZE_KB);
+	}
+	UNIFIED_BUFFER_SIZE <<= 10;
 	of_property_read_u32(dev_node, "max-conv-size", &MAX_CONV_KERNEL_SIZE);
 	of_property_read_u32(dev_node, "max-fc-vector", &MAX_FC_VECTOR_SIZE);
 #endif

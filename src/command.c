@@ -304,7 +304,6 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 	uint32_t weight_base_addr, weight_buf_size;
 	struct conv_data_size conv_size;
 	uint32_t weight_size = 0, total_output_size = 0;
-	int ts_final, os_final;
 	int ret;
 
 	// there should be at least one run
@@ -381,8 +380,7 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 	conv->input.c = cmd->c;
 	conv->input.input_base_addr = input_base_addr;
 	conv->input.input_circular_offset = cmd->input_circular_offset;
-	conv->input.tiles = get_conv_tiles_v0(cmd, UNIFIED_BUFFER_SIZE,
-					      &ts_final, &os_final);
+	conv->input.tiles = get_conv_tiles_v0(cmd, UNIFIED_BUFFER_SIZE);
 
 	conv->output.output_base_addr = output_base_addr;
 	conv->output.eltwise_base_addr = eltwise_base_addr;
