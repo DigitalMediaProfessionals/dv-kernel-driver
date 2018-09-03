@@ -58,13 +58,21 @@ static inline int get_conv_out_width(int width, int kx, int pad_left, int pad_ri
 }
 
 
-/// @brief Returns number of tiles required to be able to execute given configuration with the provided unified buffer size.
-/// @param ub_size Unified buffer size.
+/// @brief Returns number of tiles required to execute 2D convolutional configuration with the provided unified buffer size.
+/// @param w Input width.
+/// @param h Input height.
+/// @param c Input channels.
+/// @param kx Kernel width.
+/// @param ky Kernel height.
+/// @param m Number of kernels.
+/// @param pad Padding: Left, Right, Top, Bottom.
+/// @param stride Stride: X, Y.
+/// @param ub_size Unified buffer size in bytes.
 /// @param ub_in_bytes Size in bytes required in unified buffer for input.
-/// @param ub_out_bytes Size in bytes required in unified buffer for output.
-static uint16_t get_conv_tiles(int w, int h, int c, int kx, int ky, int m,
-			       const int pad[4], const int stride[2],
-			       int ub_size, int *ub_in_size, int *ub_out_size)
+/// @param ub_out_bytes Size in bytes required in unified buffer for output accumulation (8 channels of output only).
+static uint16_t get_conv_2d_tiles(int w, int h, int c, int kx, int ky, int m,
+				  const int pad[4], const int stride[2],
+				  int ub_size, int *ub_in_size, int *ub_out_size)
 {
 	int t, c_blocks, tw, ow, oh, os, ts_blk16, ts_blk128, ts_128, ts, uu;
 
@@ -98,11 +106,17 @@ static uint16_t get_conv_tiles(int w, int h, int c, int kx, int ky, int m,
 }
 
 
+/// @brief Returns non-zero if the provided run specifies 2D convolution.
+static inline int is_conv_2d_v0(const dmp_dv_kcmdraw_conv_v0_run *run) {
+	return ((run->conv_enable & 2) || (!run->conv_enable)) ? 0 : 1;
+}
+
+
 /// @brief Returns number of tiles required for given command execution.
 /// @param cmd Command for execution.
 /// @param ubuf_size Unified buffer size.
 /// @return Non-zero on success, 0 when the layer dimensions are too large.
-static uint16_t get_conv_tiles_v0(dmp_dv_kcmdraw_conv_v0 *cmd, int ub_size)
+static uint16_t get_conv_tiles_v0(const dmp_dv_kcmdraw_conv_v0 *cmd, int ub_size)
 {
 	int w, h, c, m, kx, ky;
 	int pad[4], stride[2];
@@ -111,7 +125,7 @@ static uint16_t get_conv_tiles_v0(dmp_dv_kcmdraw_conv_v0 *cmd, int ub_size)
 	if (topo_num_runs(cmd->topo) > 1) {
 		return 1;
 	}
-	if ((cmd->run[0].conv_enable & 2) || (!cmd->run[0].conv_enable)) {
+	if (!is_conv_2d_v0(&cmd->run[0])) {
 		return 1;
 	}
 
@@ -128,8 +142,8 @@ static uint16_t get_conv_tiles_v0(dmp_dv_kcmdraw_conv_v0 *cmd, int ub_size)
 	stride[0] = cmd->run[0].conv_stride & 0xFF;
 	stride[1] = (cmd->run[0].conv_stride >> 8) & 0xFF;
 
-	return get_conv_tiles(w, h, c, kx, ky, m, pad, stride,
-			      ub_size, &ub_in_size, &ub_out_size);
+	return get_conv_2d_tiles(w, h, c, kx, ky, m, pad, stride,
+				 ub_size, &ub_in_size, &ub_out_size);
 }
 
 
