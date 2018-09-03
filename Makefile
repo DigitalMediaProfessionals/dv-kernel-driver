@@ -36,5 +36,14 @@ $(MOD)-objs  := ./src/dmp-dv.o ./src/command.o
 all:
 	$(MAKEARCH) -C $(KERNELDIR) M=$(PWD) modules
 
+.SILENT:	install
+
+install:
+	echo Copying $(MOD).ko to /lib/modules/`uname -r`/
+	cp $(MOD).ko /lib/modules/`uname -r`/
+	echo depmod -a
+	depmod -a
+	echo To reload the module, execute: rmmod $(MOD) \&\& modprobe $(MOD)
+
 clean:
 	rm -rf *.ko *.o *.order src/*.o .tmp_vers* *.symvers *.mod.c .dmp* src/.*.cmd
