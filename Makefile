@@ -28,8 +28,7 @@ BUILD_DIR := $(shell pwd)
 VERBOSE = 0
 PWD = $(shell pwd)
 MOD = dmp_dv
-#KERNELDIR ?= /lib/modules/`uname -r`/build
-KERNELDIR ?= /home/ubuntu/kernel/source
+KERNELDIR ?= /lib/modules/`uname -r`/build
 
 obj-m := $(MOD).o
 $(MOD)-objs  := ./src/dmp-dv.o ./src/command.o
