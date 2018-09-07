@@ -112,6 +112,82 @@ static inline int is_conv_2d_v0(const dmp_dv_kcmdraw_conv_v0_run *run) {
 }
 
 
+/// @brief Calculates number of tiles for LRN operation.
+/// @param w Width of input.
+/// @param h Height of input.
+/// @param c Number of input channels.
+/// @param m Number of output channels.
+/// @param p Filter size.
+/// @param pad_x0 Left padding.
+/// @param pad_x1 Right padding.
+/// @param pad_y0 Top padding.
+/// @param pad_y1 Bottom padding.
+/// @param stride_x Horizontal stride.
+/// @param stride_y Vertical stride.
+/// @param u_kb Size of unified buffer in kilo bytes.
+/// @param is_conv Is convolution enabled or not.
+static int calc_num_tiles_conv_lrn(
+		int w, int h, int c, int m, int p,
+		int pad_x0, int pad_x1, int pad_y0, int pad_y1,
+		int stride_x, int stride_y,
+		int u_kb, int is_conv)
+{
+	int no_ub, no_ob, uu, t, tw, ts_1c, ow, oh, os, ts_blk16, ts_blk128, ts_128, ts;
+	
+	int u = u_kb * 1024 / 2; // size of unified buffer in number of float16 
+
+	int CONV_C_SUB = 8;
+	int CONV_C_SUB_LOG2 = 3;
+	int C_blocks = (c >> CONV_C_SUB_LOG2) + (((c & ((1<<CONV_C_SUB_LOG2)-1)) == 0) ? 0 : 1);
+
+	// In some cases no unified buffer is needed at all
+	no_ub = 0;
+	if (is_conv) {
+		if (p <= 7) {
+			if ((c <= 8) && (m <= 8)) no_ub = 1;
+		}
+		if (no_ub)
+		return 1;
+	}
+	// In some cases no output buffer is needed
+	no_ob = 0;
+	if (is_conv) {
+		if (p <= 7) {
+			if (c <= 8) no_ob = 1;
+		} else if (p <= 11) {
+			if (c <= 4) no_ob = 1;
+		} else if (p > 11) {
+			if (c == 1) no_ob = 1;
+		}
+	}
+
+	uu = 0;
+	t = 0;
+	do {
+		t++;
+		
+		tw = w / t + (w % t ? 1 : 0) + (p - 1); // width of tile
+		ts_1c = tw * h; // tile size for single channel
+		ow = (tw + pad_x0 + pad_x1 - p)/stride_x + 1;
+		oh = (h + pad_y0 + pad_y1 - p)/stride_y + 1;
+		os = ow * oh * (m > 8 ? 8 : m); // output buffer size
+
+		ts_blk16 = ts_1c * (c > CONV_C_SUB ? CONV_C_SUB : c);
+		ts_blk128 = (ts_blk16 >> 3) + ((ts_blk16 & 0x7) == 0 ? 0 : 1);
+		if (1) // (p == 1) // Ensure size modulo 16 = 2, this to ensure 8 blocks can be read in parallel from 16 cuts in 1x1 mode
+			ts_blk128 += ((2 - ts_blk128) & 0xF);
+		ts_128 = ts_blk128 * C_blocks;
+		if (1) // (p == 1) // Ensure size modulo 16 = 0, this to ensure 8 blocks can be read in parallel from 16 cuts in 1x1 mode
+			ts_128 += ((0 - ts_128) & 0xF);
+		// Input tile size in UBUF (in float16)
+		ts = (ts_128 << 3);
+		uu = ts + (no_ob ? 0 : os); // unified buffer utilization
+	} while (uu > u);
+
+	return t;
+}
+
+
 /// @brief Returns number of tiles required for given command execution.
 /// @param cmd Command for execution.
 /// @param ubuf_size Unified buffer size.
@@ -124,6 +200,14 @@ static uint16_t get_conv_tiles_v0(const dmp_dv_kcmdraw_conv_v0 *cmd, int ub_size
 
 	if (topo_num_runs(cmd->topo) > 1) {
 		return 1;
+	}
+	if (cmd->run[0].lrn) {
+		return calc_num_tiles_conv_lrn(
+			cmd->w, cmd->h, cmd->c, cmd->run[0].m, cmd->run[0].p,
+			cmd->run[0].conv_pad & 0xFF, (cmd->run[0].conv_pad >> 8) & 0xFF,
+			(cmd->run[0].conv_pad >> 16) & 0xFF, (cmd->run[0].conv_pad >> 24) & 0xFF,
+			cmd->run[0].conv_stride & 0xFF, (cmd->run[0].conv_stride >> 8) & 0xFF,
+			ub_size >> 10, cmd->run[0].conv_enable);
 	}
 	if (!is_conv_2d_v0(&cmd->run[0])) {
 		return 1;
