@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0 OR Apache-2.0
 /*
- *  DV700 kernel driver user interface
+ *	DV700 kernel driver user interface
  *
- *  Copyright (C) 2018  Digital Media Professionals Inc.
+ *	Copyright (C) 2018	Digital Media Professionals Inc.
  *
  * This software is dual licensed under the terms of Apache License, Version 2.0 OR
  * the GNU General Public License version 2, as published by the Free Software Foundation,
@@ -10,7 +10,7 @@
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	See the
  * GNU General Public License for more details.
 */
 /*
@@ -26,14 +26,23 @@
 #include "dmp_dv_cmdraw_v0.h"
 
 
-/// @brief Input/output dimensions for the supported convolutional operations.
-struct conv_data_size {
-	int32_t w;      // Width
-	int32_t h;      // Height
-	int32_t z;      // Depth
-	int32_t c;      // Channels
-	uint32_t size;  // Total Size = w * h * z * c * sizeof(float16)
-};
+#define CONV_C_SUB 8
+#define CONV_M_SUB 8
+#define CONV_C_SUB_LOG2 3
+#define CONV_M_SUB_LOG2 3
+
+
+/// @brief Returns width of the grid of nodes.
+static int conf_node_w(dmp_dv_kcmdraw_conv_v0 *conf)
+{
+	uint32_t i = conf->topo;
+	int n = 0;
+	while (i) {
+		if (i & 1) n++;
+		i >>= 1;
+	}
+	return n;
+}
 
 
 /// @brief Returns number of "run" structures required by provided topology.
@@ -44,6 +53,271 @@ static inline int topo_num_runs(uint32_t topo)
 		;
 	return n;
 }
+
+
+/// @brief Returns the peak utilization of unified buffer in bytes in case when tiles = 1.
+static int ubuf_get_single_tile_usage(dmp_dv_kcmdraw_conv_v0 *conf)
+{
+	int max_ubuf_addr, runs, node_w, m_tot, t, i, run, run_w,
+	    is_input_node, is_output_node, max_ubuf_addr_run;
+	uint32_t topo, prev_ubuf_ofm_blk_size_16, prev_ubuf_ofm_blk_size_128,
+		 prev_ubuf_ofm_size_128, prev_ubuf_ofm_offset,
+		 prev_ubuf_output_size, conf_conv_pad, conf_conv_stride,
+		 conf_pool_pad, tile_size_in_xmem, tile_size_in,
+		 tile_size_out_w, tile_size_out_h, tile_size_out,
+		 tile_size_out_pool_w, tile_size_out_pool_h, tile_size_out_pool,
+		 ubuf_ifm_offset, ubuf_ifm_blk_size_16, ubuf_ifm_blk_size_128,
+		 ubuf_ifm_size_128, ubuf_input_size, ubuf_ofm_offset,
+		 ubuf_ofm_blk_size_16, ubuf_ofm_blk_size_128, ubuf_ofm_size_128,
+		 ubuf_output_size;
+	uint16_t conf_input_w, conf_input_h, conf_input_c, prev_w, prev_h,
+		 prev_c, conf_w, conf_h, conf_c, conf_m, conf_conv_enable,
+		 conf_p, conf_pool_enable, conf_pool_size, conf_pool_stride,
+		 upsample_enable, pool_max_enable, pool_avg_enable, pad_w0,
+		 pad_w1, pad_h0, pad_h1, conf_px, conf_py, stride_w, stride_h,
+		 pool_pad_w0, pool_pad_w1, pool_pad_h0, pool_pad_h1,
+		 pool_size_w, pool_size_h, pool_stride_w, pool_stride_h,
+		 fflzp_en, fftzp_en, C_blocks, M_blocks,
+		 xmem_ofm_blk_w_16, xmem_ofm_blk_h_16,
+		 core_w, core_h;
+	//uint32_t xmem_ofm_blk_size_16;
+	//uint16_t C_size_last, M_size_last;
+	
+	max_ubuf_addr = 0;
+
+	topo = conf->topo;
+	if (topo == 0)
+		return max_ubuf_addr;
+
+	conf_input_w = conf->w;
+	conf_input_h = conf->h;
+	conf_input_c = conf->c;
+
+	runs = topo_num_runs(conf->topo);
+	node_w = conf_node_w(conf);
+
+	m_tot = 0;
+	t = topo;
+	for (i = 0; i < runs; i++) {
+		if (t & 1)
+			m_tot += conf->run[i].m;
+		t >>= 1;
+	}
+	
+	run_w = 0;
+	is_input_node = 1;
+	
+	for (run = 0; run < runs; run++) {
+
+		is_output_node = topo & 1;
+		
+		if (is_input_node) {
+			conf_w = conf_input_w;
+			conf_h = conf_input_h;
+			conf_c = conf_input_c;
+		} else {
+			conf_w = prev_w;
+			conf_h = prev_h;
+			conf_c = prev_c;
+		}
+		
+		conf_m = conf->run[run].m;
+		conf_conv_enable = conf->run[run].conv_enable;
+		conf_p = conf->run[run].p;
+		conf_conv_pad = conf->run[run].conv_pad;
+		conf_conv_stride = conf->run[run].conv_stride;
+		conf_pool_enable = conf->run[run].pool_enable;
+		conf_pool_size = conf->run[run].pool_size;
+		conf_pool_stride = conf->run[run].pool_stride;
+		conf_pool_pad = conf->run[run].pool_pad;
+		
+		conf_conv_enable = conf_conv_enable & 0x1;
+		
+		upsample_enable = (conf_pool_enable == 4); // 2x2 upsample
+		pool_max_enable = (conf_pool_enable & 0x1) | upsample_enable;
+		pool_avg_enable = (conf_pool_enable == 2);
+		
+		if (pool_avg_enable) {
+			conf_conv_pad = conf_pool_pad;
+			conf_pool_pad = 0;
+			conf_conv_stride = conf_pool_stride;
+			conf_pool_stride = 0x0101;
+			conf_p = conf_pool_size & 0xFF;
+			conf_pool_size = 0;
+			conf_conv_enable = 1;
+		}
+		
+		pad_w0 = conf_conv_pad & 0x7F;
+		pad_w1 = (conf_conv_pad >> 8) & 0xFF;
+		pad_h0 = (conf_conv_pad >> 16) & 0x7F;
+		pad_h1 = (conf_conv_pad >> 24) & 0xFF;
+		
+		conf_px = conf_p & 0xFF;
+		conf_py = (conf_p >> 8) & 0xFF;
+		if (conf_py == 0) conf_py = conf_px;
+		conf_p = (conf_px > conf_py ? conf_px : conf_py) | 1;
+		pad_w1 += (conf_p - conf_px);
+		pad_h0 += (conf_p - conf_py);
+
+		stride_w = conf_conv_stride & 0xFF;
+		stride_h = (conf_conv_stride >> 8) & 0xFF;
+		
+		pool_pad_w0 = conf_pool_pad & 0xFF;
+		pool_pad_w1 = (conf_pool_pad >> 8) & 0xFF;
+		pool_pad_h0 = (conf_pool_pad >> 16) & 0xFF;
+		pool_pad_h1 = (conf_pool_pad >> 24) & 0xFF;
+		
+		pool_size_w = conf_pool_size & 0xFF;
+		pool_size_h = (conf_pool_size >> 8) & 0xFF;
+		
+		pool_stride_w = conf_pool_stride & 0xFF;
+		pool_stride_h = (conf_pool_stride >> 8) & 0xFF;
+
+		if (!pool_avg_enable) {
+			if (!conf_conv_enable) {
+				pad_w0 = 0;
+				pad_w1 = 0;
+				pad_h0 = 0;
+				pad_h1 = 0;
+				stride_w = 1;
+				stride_h = 1;
+			}
+			if (pool_max_enable) {
+				pad_w0 += stride_w * pool_pad_w0;
+				pad_w1 += stride_w * pool_pad_w1;
+				pad_h0 += stride_h * pool_pad_h0;
+				pad_h1 += stride_h * pool_pad_h1;
+			}
+		}
+		
+		fflzp_en = (conf_px == conf_py) & (stride_w == 1) & conf_conv_enable & (pad_w0 != 0);
+		fftzp_en = (conf_px == conf_py) & (stride_h == 1) & conf_conv_enable & (pad_h0 >= (conf_p >> 1));
+		
+		if ((conf_c & ((1 << CONV_C_SUB_LOG2) - 1)) == 0) {
+			C_blocks = (conf_c >> CONV_C_SUB_LOG2);
+			//C_size_last = CONV_C_SUB;
+		} else {
+			C_blocks = (conf_c >> CONV_C_SUB_LOG2) + 1;
+			//C_size_last = conf_c & ((1 << CONV_C_SUB_LOG2) - 1);
+		}
+		
+		if ((conf_m & ((1 << CONV_M_SUB_LOG2) - 1)) == 0) {
+			M_blocks = (conf_m >> CONV_M_SUB_LOG2);
+			//M_size_last = CONV_M_SUB;
+		} else {
+			M_blocks = (conf_m >> CONV_M_SUB_LOG2) + 1;
+			//M_size_last = conf_m & ((1 << CONV_M_SUB_LOG2) - 1);
+		}
+		
+		if (conf_conv_enable) {
+			xmem_ofm_blk_w_16 = (pad_w0 + conf_w + pad_w1 - conf_p) / stride_w + 1;
+			xmem_ofm_blk_h_16 = (pad_h0 + conf_h + pad_h1 - conf_p) / stride_h + 1;
+		} else {
+			xmem_ofm_blk_w_16 = pad_w0 + conf_w + pad_w1;
+			xmem_ofm_blk_h_16 = pad_h0 + conf_h + pad_h1;
+		}
+		if (pool_max_enable) {
+			if (upsample_enable) { 
+				xmem_ofm_blk_w_16 = 2 * xmem_ofm_blk_w_16;
+				xmem_ofm_blk_h_16 = 2 * xmem_ofm_blk_h_16;
+			} else {
+				xmem_ofm_blk_w_16 = (xmem_ofm_blk_w_16 - pool_size_w) / pool_stride_w + 1;
+				xmem_ofm_blk_h_16 = (xmem_ofm_blk_h_16 - pool_size_h) / pool_stride_h + 1;
+			}
+		}
+		//xmem_ofm_blk_size_16 = (conf_m > CONV_M_SUB ? CONV_M_SUB : conf_m) * xmem_ofm_blk_w_16 * xmem_ofm_blk_h_16;
+		
+		if (!is_output_node) {
+			prev_w = xmem_ofm_blk_w_16;
+			prev_h = xmem_ofm_blk_h_16;
+			prev_c = conf_m;
+		}
+		
+		core_w = pad_w0 + conf_w + pad_w1;
+		core_h = pad_h0 + conf_h + pad_h1;
+		
+		tile_size_in_xmem = conf_h * conf_w;
+		tile_size_in = (core_h - (fftzp_en ? conf_p >> 1 : 0)) * (core_w - (fflzp_en ? conf_p >> 1 : 0));
+		tile_size_out_w = (core_w - conf_p)/stride_w + 1;
+		tile_size_out_h = (core_h - conf_p)/stride_h + 1;
+		tile_size_out = tile_size_out_w * tile_size_out_h; 
+
+		if (!conf_conv_enable) {
+			tile_size_out_w = core_w;
+			tile_size_out_h = core_h;
+			tile_size_out = tile_size_in;
+		}
+
+		if (upsample_enable) {
+			tile_size_out_pool_w = 2*tile_size_out_w;
+			tile_size_out_pool_h = 2*tile_size_out_h;
+		} else {
+			tile_size_out_pool_w = (tile_size_out_w - pool_size_w)/pool_stride_w + 1;
+			tile_size_out_pool_h = (tile_size_out_h - pool_size_h)/pool_stride_h + 1;
+		}
+		tile_size_out_pool = tile_size_out_pool_w * tile_size_out_pool_h;
+		
+		ubuf_ifm_offset = 0;
+		
+		ubuf_ifm_blk_size_16 = tile_size_in_xmem * (conf_c > CONV_C_SUB ? CONV_C_SUB : conf_c);
+		ubuf_ifm_blk_size_128 = (ubuf_ifm_blk_size_16 & 0x7) == 0 ? (ubuf_ifm_blk_size_16 >> 3) : ((ubuf_ifm_blk_size_16 >> 3) + 1);
+		ubuf_ifm_blk_size_128 += ((2 - ubuf_ifm_blk_size_128) & 0xF);
+		ubuf_ifm_size_128 = ubuf_ifm_blk_size_128 * C_blocks;
+		ubuf_ifm_size_128 += ((0 - ubuf_ifm_size_128) & 0xF);
+		ubuf_input_size = (ubuf_ifm_size_128 << 4);
+		
+		if (!is_input_node) {
+			ubuf_ifm_offset = prev_ubuf_ofm_offset;
+			ubuf_ifm_blk_size_16 = prev_ubuf_ofm_blk_size_16;
+			ubuf_ifm_blk_size_128 = prev_ubuf_ofm_blk_size_128;
+			ubuf_ifm_size_128 = prev_ubuf_ofm_size_128;
+			ubuf_input_size = prev_ubuf_output_size;
+		}
+		
+		ubuf_ofm_offset = ubuf_ifm_offset + (((run_w == node_w-1) && (conf_conv_enable == 0)) ? 0 : ubuf_input_size);
+		
+		ubuf_ofm_blk_size_16 = ((conf_conv_enable == 0) ? tile_size_out_pool : tile_size_out ) * (conf_m > CONV_M_SUB ? CONV_M_SUB : conf_m);
+		ubuf_ofm_blk_size_128 = (ubuf_ofm_blk_size_16 & 0x7) == 0 ? (ubuf_ofm_blk_size_16 >> 3) : ((ubuf_ofm_blk_size_16 >> 3) + 1);
+		ubuf_ofm_blk_size_128 += ((2 - ubuf_ofm_blk_size_128) & 0xF);
+		ubuf_ofm_size_128 = ubuf_ofm_blk_size_128 * M_blocks;
+		ubuf_ofm_size_128 += ((0 - ubuf_ofm_size_128) & 0xF);
+		ubuf_output_size = (ubuf_ofm_size_128 << 4);
+		
+		if (!is_output_node) {
+			prev_ubuf_ofm_offset = ubuf_ofm_offset;
+			prev_ubuf_ofm_blk_size_16 = ubuf_ofm_blk_size_16;
+			prev_ubuf_ofm_blk_size_128 = ubuf_ofm_blk_size_128;
+			prev_ubuf_ofm_size_128 = ubuf_ofm_size_128;
+			prev_ubuf_output_size = ubuf_output_size;
+		}
+		
+		if (is_output_node)
+			max_ubuf_addr_run = ubuf_ofm_offset + (ubuf_ofm_blk_size_128 << 4);
+		else
+			max_ubuf_addr_run = ubuf_ofm_offset + (ubuf_ofm_size_128 << 4);
+		
+		if (max_ubuf_addr_run > max_ubuf_addr)
+			max_ubuf_addr = max_ubuf_addr_run;
+		
+		topo >>= 1;
+		if (is_output_node) {
+			run_w++;
+		}
+		is_input_node = is_output_node;
+	}
+	
+	return max_ubuf_addr;
+}
+
+
+/// @brief Input/output dimensions for the supported convolutional operations.
+struct conv_data_size {
+	int32_t w;			// Width
+	int32_t h;			// Height
+	int32_t z;			// Depth
+	int32_t c;			// Channels
+	uint32_t size;	// Total Size = w * h * z * c * sizeof(float16)
+};
 
 
 /// @brief Returns output width for convolution.
@@ -68,11 +342,9 @@ static inline int get_conv_out_width(int width, int kx, int pad_left, int pad_ri
 /// @param pad Padding: Left, Right, Top, Bottom.
 /// @param stride Stride: X, Y.
 /// @param ub_size Unified buffer size in bytes.
-/// @param ub_in_bytes Size in bytes required in unified buffer for input.
-/// @param ub_out_bytes Size in bytes required in unified buffer for output accumulation (8 channels of output only).
 static uint16_t get_conv_2d_tiles(int w, int h, int c, int kx, int ky, int m,
-				  const int pad[4], const int stride[2],
-				  int ub_size, int *ub_in_size, int *ub_out_size)
+					const int pad[4], const int stride[2],
+					int ub_size)
 {
 	int t, c_blocks, tw, ow, oh, os, ts_blk16, ts_blk128, ts_128, ts, uu;
 
@@ -81,26 +353,21 @@ static uint16_t get_conv_2d_tiles(int w, int h, int c, int kx, int ky, int m,
 	t = 0;
 	while (t < w) {
 		++t;
-		tw = (w / t + (w % t ? 1 : 0)) + ((kx > ky ? kx : ky) | 1) - 1;  // width of a tile
+		tw = (w / t + (w % t ? 1 : 0)) + ((kx > ky ? kx : ky) | 1) - 1;	// width of a tile
 		ow = get_conv_out_width(tw, kx, pad[0], pad[1], stride[0]);
 		oh = get_conv_out_width(h, ky, pad[2], pad[3], stride[1]);
-		os = ow * oh * (m < 8 ? m : 8);  // output buffer size
-		ts_blk16 = tw * h * (c < 8 ? c : 8);  // tile size for a segment
+		os = ow * oh * (m < 8 ? m : 8);	// output buffer size
+		ts_blk16 = tw * h * (c < 8 ? c : 8);	// tile size for a segment
 		ts_blk128 = (ts_blk16 >> 3) + (ts_blk16 & 7 ? 1 : 0);
 		ts_blk128 += (2 - ts_blk128) & 15;
 		ts_128 = ts_blk128 * c_blocks;
 		ts_128 += (0 - ts_128) & 15;
-		ts = ts_128 << 3;  // input tile size in UBUF (in float16)
-		uu = ts + os;  // unified buffer utilization
+		ts = ts_128 << 3;	// input tile size in UBUF (in float16)
+		uu = ts + os;	// unified buffer utilization
 		if ((uu << 1) <= ub_size) {
-			*ub_in_size = ts;
-			*ub_out_size = os;
 			return (uint16_t)t;
 		}
 	}
-
-	*ub_in_size = 0;
-	*ub_out_size = 0;
 
 	return 0;
 }
@@ -136,9 +403,7 @@ static int calc_num_tiles_conv_lrn(
 	
 	int u = u_kb * 1024 / 2; // size of unified buffer in number of float16 
 
-	int CONV_C_SUB = 8;
-	int CONV_C_SUB_LOG2 = 3;
-	int C_blocks = (c >> CONV_C_SUB_LOG2) + (((c & ((1<<CONV_C_SUB_LOG2)-1)) == 0) ? 0 : 1);
+	int C_blocks = (c >> CONV_C_SUB_LOG2) + (((c & ((1 << CONV_C_SUB_LOG2) - 1)) == 0) ? 0 : 1);
 
 	// In some cases no unified buffer is needed at all
 	no_ub = 0;
@@ -196,7 +461,6 @@ static uint16_t get_conv_tiles_v0(const dmp_dv_kcmdraw_conv_v0 *cmd, int ub_size
 {
 	int w, h, c, m, kx, ky;
 	int pad[4], stride[2];
-	int ub_in_size, ub_out_size;
 
 	if (topo_num_runs(cmd->topo) > 1) {
 		return 1;
@@ -227,7 +491,7 @@ static uint16_t get_conv_tiles_v0(const dmp_dv_kcmdraw_conv_v0 *cmd, int ub_size
 	stride[1] = (cmd->run[0].conv_stride >> 8) & 0xFF;
 
 	return get_conv_2d_tiles(w, h, c, kx, ky, m, pad, stride,
-				 ub_size, &ub_in_size, &ub_out_size);
+				 ub_size);
 }
 
 
@@ -271,7 +535,7 @@ static inline void init_conv_input_size_v0_4(
 	in_size->h = h;
 	in_size->z = z;
 	in_size->c = c;
-	in_size->size = (uint32_t)w * h * z * c * 2;  // we are using 16-bit floats
+	in_size->size = (uint32_t)w * h * z * c * 2;	// we are using 16-bit floats
 }
 
 
@@ -323,12 +587,12 @@ static void get_conv_output_size_v0(
 		t0_h = (core_h - py) / stride_h + 1;
 		// NOTE: No padding or stride in Z (depth) implemented yet!
 		t0_z = (in_z - pz + 1);
-		t0_c = m;  // Number of convolution output channels
+		t0_c = m;	// Number of convolution output channels
 		*w_size = get_weight_size(
 			in_c, m, ((px > py) ? px : py) | 1, (run->weight_fmt & 2),
 			(run->conv_enable & 2));
 	}
-	else {  // Bypass of convolution
+	else {	// Bypass of convolution
 		t0_w = in_w;
 		t0_h = in_h;
 		t0_z = in_z;
@@ -357,16 +621,16 @@ static void get_conv_output_size_v0(
 		}
 		else {
 			out_size->w = ((pool_pad_w0 + t0_w + pool_pad_w1) -
-				       pool_size_w) / pool_stride_w + 1;
+							 pool_size_w) / pool_stride_w + 1;
 			out_size->h = ((pool_pad_h0 + t0_h + pool_pad_h1) -
-				       pool_size_h) / pool_stride_h + 1;
+							 pool_size_h) / pool_stride_h + 1;
 		}
 		// NOTE: No pooling in Z (depth) implemented yet!
 		out_size->z = t0_z;
 		// Number of channels preserved in pooling...
 		out_size->c = t0_c;
 	}
-	else {  // Bypass of max pooling
+	else {	// Bypass of max pooling
 		out_size->w = t0_w;
 		out_size->h = t0_h;
 		out_size->z = t0_z;
@@ -376,4 +640,4 @@ static void get_conv_output_size_v0(
 }
 
 
-#endif  // _UAPI_LINUX_DMP_DV_DIMENSIONS_H
+#endif	// _UAPI_LINUX_DMP_DV_DIMENSIONS_H

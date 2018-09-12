@@ -303,8 +303,8 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 	uint32_t eltwise_base_addr, eltwise_buf_size;
 	uint32_t weight_base_addr, weight_buf_size;
 	struct conv_data_size conv_size;
-	uint32_t weight_size = 0, total_output_size = 0;
-	int ret;
+	uint32_t weight_size = 0, total_output_size = 0, ubuf_size;
+	int ret, valid_multi_run = 1;
 
 	// there should be at least one run
 	if (size < sizeof(dmp_dv_kcmdraw_conv_v0) - 31 *
@@ -381,6 +381,14 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 	conv->input.input_base_addr = input_base_addr;
 	conv->input.input_circular_offset = cmd->input_circular_offset;
 	conv->input.tiles = get_conv_tiles_v0(cmd, UNIFIED_BUFFER_SIZE);
+	if (!conv->input.tiles) {
+		kfree(cmd);
+		pr_warn(DRM_DEV_NAME ": Could not determine tiles for: %dx%dx%d\n",
+			(int)conv->input.w, (int)conv->input.h, (int)conv->input.c);
+		return -EINVAL;
+	}
+	if (conv->input.tiles != 1)
+		valid_multi_run = 0;
 
 	conv->output.output_base_addr = output_base_addr;
 	conv->output.eltwise_base_addr = eltwise_base_addr;
@@ -433,12 +441,31 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 		conv->run[i].actfunc_param = cmd->run[i].actfunc_param;
 		conv->run[i].rectifi_en = cmd->run[i].rectifi_en;
 		conv->run[i].lrn = cmd->run[i].lrn;
+
+		if ((cmd->z > 1) || (cmd->run[i].pz > 1) ||
+		    (cmd->run[i].conv_dilation))  // TODO: add more checks: no maxpool_with_argmax, no unpool_with_argmax.
+			valid_multi_run = 0;
 	}
 	if (output_buf_size < total_output_size ||
 	    (eltwise_base_addr != 0xDEADBEEF &&
 	     eltwise_buf_size < total_output_size)) {
 		kfree(cmd);
 		return -EINVAL;
+	}
+	if (cmd->topo != 1) {
+		if (!valid_multi_run) {
+			pr_warn(DRM_DEV_NAME ": Configuration %dx%dx%d z=%d cannot be executed with multiple runs\n",
+				(int)conv->input.w, (int)conv->input.h, (int)conv->input.c, (int)conv->input.z);
+			kfree(cmd);
+			return -EINVAL;
+		}
+		ubuf_size = ubuf_get_single_tile_usage((dmp_dv_kcmdraw_conv_v0*)cmd);
+		if (ubuf_size > UNIFIED_BUFFER_SIZE) {
+			kfree(cmd);
+			pr_warn(DRM_DEV_NAME ": Configuration %dx%dx%d requires unified buffer of size %d\n",
+				(int)conv->input.w, (int)conv->input.h, (int)conv->input.c, (int)ubuf_size);
+			return -EINVAL;
+		}
 	}
         /*for (i = 0; i < (cmd_size >> 2); ++i) {
             pr_info(DRM_DEV_NAME ": %u: %08X\n", i << 2, cmd_buf[i]);
