@@ -194,7 +194,7 @@ static int get_dma_addr(struct device *dev, struct dmp_cmb *cmb,
 	}
 
 	if (buf->offs & 1) {  // check required alignment
-		pr_warning(DRM_DEV_NAME ": got unaligned offset %llu\n",
+		pr_warn(DRM_DEV_NAME ": got unaligned offset %llu\n",
 			(unsigned long long)buf->offs);
 		return -EINVAL;
 	}
@@ -243,7 +243,7 @@ static int get_dma_addr(struct device *dev, struct dmp_cmb *cmb,
 		obj->buf_size = sg_dma_len(sg);
 #ifdef CONFIG_ARCH_DMA_ADDR_T_64BIT
 		if (obj->dma_addr + obj->buf_size > 4294967296ull) {
-			pr_warning(DRM_DEV_NAME
+			pr_warn(DRM_DEV_NAME
 				": dma_addr=%llu buf_size=%llu lies in high memory\n",
 				(unsigned long long)obj->dma_addr,
 				(unsigned long long)obj->buf_size);
@@ -562,6 +562,17 @@ static int dv_convert_fc_v0(struct device *dev, struct dmp_cmb *cmb,
 
 	if (copy_from_user(&cmd, user_cmd, size))
 		return -EFAULT;
+
+	if ((!cmd.input_size) || (cmd.input_size > MAX_FC_VECTOR_SIZE) || (cmd.input_size & 15)) {
+		pr_warn(DRM_DEV_NAME ": got unsupported input size %hu for FC layer\n",
+			cmd.input_size);
+		return -EINVAL;
+	}
+	if ((!cmd.output_size) || (cmd.output_size > MAX_FC_VECTOR_SIZE)) {
+		pr_warn(DRM_DEV_NAME ": got unsupported output size %hu for FC layer\n",
+			cmd.output_size);
+		return -EINVAL;
+	}
 
 	ret = get_dma_addr(dev, cmb, &cmd.input_buf, &input_base_addr,
 			   &input_buf_size);
