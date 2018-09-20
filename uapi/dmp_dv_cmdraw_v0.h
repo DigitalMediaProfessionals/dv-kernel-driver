@@ -38,7 +38,7 @@ typedef struct dmp_dv_kcmdraw_conv_v0_run_impl {
 	__u16 pz;                // Filter Depth (1 in case of 2D convolution)
 	__u16 conv_stride;       // Bits [7:0] = X stride, bits [15:8] = Y stride
 	__u16 conv_dilation;     // Bits [7:0] = X dilation, bits [15:8] = Y dilation
-	__u16 weight_fmt;        // Weight format (0 = random access blocks, 1 = compact stream, 3 = 8-bit qunatized stream)
+	__u16 weight_fmt;        // Weight format (0 = random access blocks, 1 = FP16, 3 = 8-bit quantized)
 	__u16 pool_enable;       // 0 = disabled, 1 = max pooling, 2 = average pooling, 4 - upsampling
 	__u16 pool_avg_param;    // Usually be set to 1/pool_size^2 in FP16 when using average pooling (average pooling assumes square size)
 	__u16 pool_size;         // Bits [7:0] = width, bits [15:8] = height
