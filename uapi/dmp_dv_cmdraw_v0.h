@@ -30,7 +30,7 @@
 /// @details Members within structure are rearranged by size to avoid requirements for 64-bits padding in the middle.
 typedef struct dmp_dv_kcmdraw_conv_v0_run_impl {
 	dmp_dv_kbuf weight_buf;  // Buffer with packed weights
-	__u32 conv_pad;          // Bits [7:0] = left padding, bits [15:8] = right padding, bits [23:16] = top padding, bits [31:24] = bottom padding
+	__u32 conv_pad;          // Bits [6:0] = left padding, bits [15:8] = right padding, bits [22:16] = top padding, bits [31:24] = bottom padding
 	__u32 pool_pad;          // Bits [7:0] = left padding, bits [15:8] = right padding, bits [23:16] = top padding, bits [31:24] = bottom padding
 	__u16 m;                 // Number of Output Channels
 	__u16 conv_enable;       // 1 = Enabled, 0 = Disabled, 3 = Depthwise

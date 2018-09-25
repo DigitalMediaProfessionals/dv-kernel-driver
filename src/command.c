@@ -308,12 +308,16 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 
 	// there should be at least one run
 	if (size < sizeof(dmp_dv_kcmdraw_conv_v0) - 31 *
-	    sizeof(dmp_dv_kcmdraw_conv_v0_run))
+	    sizeof(dmp_dv_kcmdraw_conv_v0_run)) {
+		pr_warn(DRM_DEV_NAME ": Command size is too small\n");
 		return -EINVAL;
+	}
 
 	cmd = kmalloc(size, GFP_KERNEL);
-	if (!cmd)
+	if (!cmd) {
+		pr_warn(DRM_DEV_NAME ": kmalloc() failed for %zu bytes\n", size);
 		return -ENOMEM;
+	}
 	if (copy_from_user(cmd, user_cmd, size)) {
 		kfree(cmd);
 		return -EFAULT;
@@ -323,6 +327,7 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 	if (size < sizeof(dmp_dv_kcmdraw_conv_v0) - (32 - runs) *
 	    sizeof(dmp_dv_kcmdraw_conv_v0_run)) {
 		kfree(cmd);
+		pr_warn(DRM_DEV_NAME ": Invalid runs=%u\n", runs);
 		return -EINVAL;
 	}
 
@@ -331,22 +336,27 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 			   &input_buf_size);
 	if (ret) {
 		kfree(cmd);
+		pr_warn(DRM_DEV_NAME ": get_dma_addr() failed for input\n");
 		return ret;
 	}
 	if (input_buf_size < conv_size.size) {
 		kfree(cmd);
+		pr_warn(DRM_DEV_NAME ": got input buffer size %u while %u was expected\n",
+		        input_buf_size, conv_size.size);
 		return -EINVAL;
 	}
 	ret = get_dma_addr(dev, cmb, &cmd->output_buf, &output_base_addr,
 			   &output_buf_size);
 	if (ret) {
 		kfree(cmd);
+		pr_warn(DRM_DEV_NAME ": get_dma_addr() failed for output\n");
 		return ret;
 	}
 	ret = get_dma_addr(dev, cmb, &cmd->eltwise_buf, &eltwise_base_addr,
 			   &eltwise_buf_size);
 	if (ret) {
 		kfree(cmd);
+		pr_warn(DRM_DEV_NAME ": get_dma_addr() failed for eltwise\n");
 		return ret;
 	}
 
@@ -359,6 +369,7 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 		cmb_node = dv_cmb_allocate(dev);
 		if (!cmb_node) {
 			kfree(cmd);
+			pr_warn(DRM_DEV_NAME ": dv_cmb_allocate() failed\n");
 			return -ENOMEM;
 		}
 		list_add(&cmb_node->list_node, &cmb->cmb_list);
@@ -403,6 +414,8 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 		if ((px < 1) || (py < 1) || (px > MAX_CONV_KERNEL_SIZE) ||
 		    (py > MAX_CONV_KERNEL_SIZE)) {
 			kfree(cmd);
+			pr_warn(DRM_DEV_NAME ": Invalid kernel size %dx%d\n",
+				px, py);
 			return -EINVAL;
 		}
 		get_conv_output_size_v0(&cmd->run[i], &conv_size, &conv_size,
@@ -415,11 +428,14 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 		                   &weight_base_addr, &weight_buf_size);
 		if (ret) {
 			kfree(cmd);
+			pr_warn(DRM_DEV_NAME ": get_dma_addr() failed for weights\n");
 			return ret;
 		}
 		if (weight_base_addr != 0xDEADBEEF &&
 		    weight_buf_size < weight_size) {
 			kfree(cmd);
+			pr_warn(DRM_DEV_NAME ": got weights buffer size %u while expected %u\n",
+				weight_buf_size, weight_size);
 			return -EINVAL;
 		}
 
@@ -450,6 +466,8 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 	    (eltwise_base_addr != 0xDEADBEEF &&
 	     eltwise_buf_size < total_output_size)) {
 		kfree(cmd);
+		pr_warn(DRM_DEV_NAME ": got eltwise buffer size %u while expected %u\n",
+			eltwise_buf_size, total_output_size);
 		return -EINVAL;
 	}
 	if (cmd->topo != 1) {
@@ -459,7 +477,7 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 			kfree(cmd);
 			return -EINVAL;
 		}
-		ubuf_size = ubuf_get_single_tile_usage((dmp_dv_kcmdraw_conv_v0*)cmd);
+		ubuf_size = ubuf_get_single_tile_usage((dmp_dv_kcmdraw_conv_v0*)cmd, UNIFIED_BUFFER_SIZE);
 		if (ubuf_size > UNIFIED_BUFFER_SIZE) {
 			kfree(cmd);
 			pr_warn(DRM_DEV_NAME ": Configuration %dx%dx%d requires unified buffer of size %d\n",
@@ -467,9 +485,11 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 			return -EINVAL;
 		}
 	}
-        /*for (i = 0; i < (cmd_size >> 2); ++i) {
+        /*pr_info(DRM_DEV_NAME ">>>\n");
+        for (i = 0; i < (cmd_size >> 2); ++i) {
             pr_info(DRM_DEV_NAME ": %u: %08X\n", i << 2, cmd_buf[i]);
-        }*/
+        }
+        pr_info(DRM_DEV_NAME "<<<\n");*/
 	/*if (conv->run[0].lrn) {
 		pr_info(DRM_DEV_NAME ": LRN tiles: %dx%dx%d: %d\n",
 			(int)conv->input.w, (int)conv->input.h, (int)conv->input.c,
