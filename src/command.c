@@ -178,9 +178,10 @@ void dv_cmb_finalize(struct device *dev, struct dmp_cmb *cmb)
 	kfree(cmb);
 }
 
-// addr is uint32_t since the HW can only use 32-bit address
+// NOTE: addr is uint32_t since the HW can only use 32-bit address.
 static int get_dma_addr(struct device *dev, struct dmp_cmb *cmb,
-			dmp_dv_kbuf *buf, uint32_t *addr, uint32_t *buf_size)
+			dmp_dv_kbuf *buf, uint32_t *addr, uint32_t *buf_size,
+			uint32_t align)
 {
 	struct dmp_dmabuf_hash_entry *obj;
 	struct scatterlist *sg;
@@ -193,7 +194,7 @@ static int get_dma_addr(struct device *dev, struct dmp_cmb *cmb,
 		return 0;
 	}
 
-	if (buf->offs & 1) {  // check required alignment
+	if (buf->offs & (align - 1)) {  // check required alignment
 		pr_warn(DRM_DEV_NAME ": got unaligned offset %llu\n",
 			(unsigned long long)buf->offs);
 		return -EINVAL;
@@ -333,7 +334,7 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 
 	init_conv_input_size_v0(cmd, &conv_size);
 	ret = get_dma_addr(dev, cmb, &cmd->input_buf, &input_base_addr,
-			   &input_buf_size);
+			   &input_buf_size, 2);
 	if (ret) {
 		kfree(cmd);
 		pr_warn(DRM_DEV_NAME ": get_dma_addr() failed for input\n");
@@ -346,14 +347,14 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 		return -EINVAL;
 	}
 	ret = get_dma_addr(dev, cmb, &cmd->output_buf, &output_base_addr,
-			   &output_buf_size);
+			   &output_buf_size, 2);
 	if (ret) {
 		kfree(cmd);
 		pr_warn(DRM_DEV_NAME ": get_dma_addr() failed for output\n");
 		return ret;
 	}
 	ret = get_dma_addr(dev, cmb, &cmd->eltwise_buf, &eltwise_base_addr,
-			   &eltwise_buf_size);
+			   &eltwise_buf_size, 2);
 	if (ret) {
 		kfree(cmd);
 		pr_warn(DRM_DEV_NAME ": get_dma_addr() failed for eltwise\n");
@@ -425,7 +426,7 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 			init_conv_input_size_v0(cmd, &conv_size);
 		}
 		ret = get_dma_addr(dev, cmb, &cmd->run[i].weight_buf,
-		                   &weight_base_addr, &weight_buf_size);
+		                   &weight_base_addr, &weight_buf_size, 2);
 		if (ret) {
 			kfree(cmd);
 			pr_warn(DRM_DEV_NAME ": get_dma_addr() failed for weights\n");
@@ -583,7 +584,7 @@ static int dv_convert_fc_v0(struct device *dev, struct dmp_cmb *cmb,
 	if (copy_from_user(&cmd, user_cmd, size))
 		return -EFAULT;
 
-	if ((!cmd.input_size) || (cmd.input_size > MAX_FC_VECTOR_SIZE) || (cmd.input_size & 15)) {
+	if ((!cmd.input_size) || (cmd.input_size > MAX_FC_VECTOR_SIZE)) {
 		pr_warn(DRM_DEV_NAME ": got unsupported input size %hu for FC layer\n",
 			cmd.input_size);
 		return -EINVAL;
@@ -595,34 +596,37 @@ static int dv_convert_fc_v0(struct device *dev, struct dmp_cmb *cmb,
 	}
 
 	ret = get_dma_addr(dev, cmb, &cmd.input_buf, &input_base_addr,
-			   &input_buf_size);
+			   &input_buf_size, 16);
 	if (ret)
 		return ret;
 	if (input_buf_size < cmd.input_size * 2)
 		return -EINVAL;
 	ret = get_dma_addr(dev, cmb, &cmd.output_buf, &output_base_addr,
-			   &output_buf_size);
+			   &output_buf_size, 16);
 	if (ret)
 		return ret;
 	if (output_buf_size < cmd.output_size * 2)
 		return -EINVAL;
 	ret = get_dma_addr(dev, cmb, &cmd.weight_buf, &weight_base_addr,
-			   &weight_buf_size);
+			   &weight_buf_size, 16);
 	if (ret)
 		return ret;
 	if (cmd.weight_fmt == 0) {
 		weight_size = (uint32_t)cmd.input_size * cmd.output_size * 2;
 		weight_addr = weight_base_addr;
-		bias_addr = weight_base_addr + weight_size;
+		bias_addr = weight_base_addr + ALIGN(weight_size, 16);
 	} else if (cmd.weight_fmt == 1) {
 		weight_size = (uint32_t)cmd.input_size * cmd.output_size + 512;
 		weight_addr = weight_base_addr + 512;
-		bias_addr = weight_base_addr + weight_size;
+		bias_addr = weight_base_addr + ALIGN(weight_size, 16);
 	} else
 		return -EINVAL;
-	weight_size += cmd.output_size * 2;
-	if (weight_buf_size < weight_size)
+	weight_size = bias_addr - weight_base_addr + cmd.output_size * 2;
+	if (weight_buf_size < weight_size) {
+		pr_warn(DRM_DEV_NAME ": FC weight buffer size %u less than required %u\n",
+			weight_buf_size, weight_size);
 		return -EINVAL;
+	}
 
 	cmb_node = list_first_entry(&cmb->cmb_list, struct dmp_cmb_list_entry,
 				    list_node);
