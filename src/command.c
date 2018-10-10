@@ -180,8 +180,7 @@ void dv_cmb_finalize(struct device *dev, struct dmp_cmb *cmb)
 
 // NOTE: addr is uint32_t since the HW can only use 32-bit address.
 static int get_dma_addr(struct device *dev, struct dmp_cmb *cmb,
-			dmp_dv_kbuf *buf, uint32_t *addr, uint32_t *buf_size,
-			uint32_t align)
+			dmp_dv_kbuf *buf, uint32_t *addr, uint32_t *buf_size)
 {
 	struct dmp_dmabuf_hash_entry *obj;
 	struct scatterlist *sg;
@@ -194,7 +193,7 @@ static int get_dma_addr(struct device *dev, struct dmp_cmb *cmb,
 		return 0;
 	}
 
-	if (buf->offs & (align - 1)) {  // check required alignment
+	if (buf->offs & 15) {  // check required alignment
 		pr_warn(DRM_DEV_NAME ": got unaligned offset %llu\n",
 			(unsigned long long)buf->offs);
 		return -EINVAL;
@@ -334,7 +333,7 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 
 	init_conv_input_size_v0(cmd, &conv_size);
 	ret = get_dma_addr(dev, cmb, &cmd->input_buf, &input_base_addr,
-			   &input_buf_size, 2);
+			   &input_buf_size);
 	if (ret) {
 		kfree(cmd);
 		pr_warn(DRM_DEV_NAME ": get_dma_addr() failed for input\n");
@@ -347,14 +346,14 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 		return -EINVAL;
 	}
 	ret = get_dma_addr(dev, cmb, &cmd->output_buf, &output_base_addr,
-			   &output_buf_size, 2);
+			   &output_buf_size);
 	if (ret) {
 		kfree(cmd);
 		pr_warn(DRM_DEV_NAME ": get_dma_addr() failed for output\n");
 		return ret;
 	}
 	ret = get_dma_addr(dev, cmb, &cmd->eltwise_buf, &eltwise_base_addr,
-			   &eltwise_buf_size, 2);
+			   &eltwise_buf_size);
 	if (ret) {
 		kfree(cmd);
 		pr_warn(DRM_DEV_NAME ": get_dma_addr() failed for eltwise\n");
@@ -426,7 +425,7 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 			init_conv_input_size_v0(cmd, &conv_size);
 		}
 		ret = get_dma_addr(dev, cmb, &cmd->run[i].weight_buf,
-		                   &weight_base_addr, &weight_buf_size, 2);
+		                   &weight_base_addr, &weight_buf_size);
 		if (ret) {
 			kfree(cmd);
 			pr_warn(DRM_DEV_NAME ": get_dma_addr() failed for weights\n");
@@ -596,19 +595,19 @@ static int dv_convert_fc_v0(struct device *dev, struct dmp_cmb *cmb,
 	}
 
 	ret = get_dma_addr(dev, cmb, &cmd.input_buf, &input_base_addr,
-			   &input_buf_size, 16);
+			   &input_buf_size);
 	if (ret)
 		return ret;
 	if (input_buf_size < cmd.input_size * 2)
 		return -EINVAL;
 	ret = get_dma_addr(dev, cmb, &cmd.output_buf, &output_base_addr,
-			   &output_buf_size, 16);
+			   &output_buf_size);
 	if (ret)
 		return ret;
 	if (output_buf_size < cmd.output_size * 2)
 		return -EINVAL;
 	ret = get_dma_addr(dev, cmb, &cmd.weight_buf, &weight_base_addr,
-			   &weight_buf_size, 16);
+			   &weight_buf_size);
 	if (ret)
 		return ret;
 	if (cmd.weight_fmt == 0) {
