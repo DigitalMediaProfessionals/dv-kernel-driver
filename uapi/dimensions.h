@@ -545,6 +545,31 @@ static uint32_t get_weight_size(int c, int m, int k, int quantized, int dw)
 }
 
 
+/// @brief Returns size in bytes for the packed weights for dilated convolution.
+/// @param c Number of input channels.
+/// @param m Number of convolutional kernels (number of output channels).
+/// @param kx Kernel width.
+/// @param ky Kernel height.
+/// @param quantized Use quantized weights or not.
+static uint32_t get_weight_size_dil(int c, int m, int kx, int ky, int quantized)
+{
+	uint32_t res = quantized ? 512 : 0;
+	const int n = kx * ky;
+	int i, d;
+
+	for (i = 0; i < n; i++) {
+		res += get_weight_size(c, m, 1, quantized, 0);
+		if (quantized)
+			res -= 512;
+		d = res & 15;
+		if (d)
+			res += 16 - d;
+	}
+
+	return res;
+}
+
+
 /// @brief Assigns input size.
 static inline void init_conv_input_size_v0_4(
 		__u16 w, __u16 h, __u16 z, __u16 c,
@@ -607,9 +632,12 @@ static void get_conv_output_size_v0(
 		// NOTE: No padding or stride in Z (depth) implemented yet.
 		t0_z = (in_z - pz + 1);
 		t0_c = m;  // number of output channels
-		*w_size = get_weight_size(
-			in_c, m, ((px > py) ? px : py) | 1, (run->weight_fmt & 2),
-			(run->conv_enable & 2));
+		if ((dil_x == 1) && (dil_y == 1))
+			*w_size = get_weight_size(
+				in_c, m, ((px > py) ? px : py) | 1, (run->weight_fmt & 2),
+				(run->conv_enable & 2));
+		else
+			*w_size = get_weight_size_dil(in_c, m, px, py, (run->weight_fmt & 2));
 	}
 	else {	// Bypass of convolution
 		t0_w = in_w;
