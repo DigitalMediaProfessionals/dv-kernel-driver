@@ -180,7 +180,8 @@ void dv_cmb_finalize(struct device *dev, struct dmp_cmb *cmb)
 
 // NOTE: addr is uint32_t since the HW can only use 32-bit address.
 static int get_dma_addr(struct device *dev, struct dmp_cmb *cmb,
-			dmp_dv_kbuf *buf, uint32_t *addr, uint32_t *buf_size)
+			struct dmp_dv_kbuf *buf,
+			uint32_t *addr, uint32_t *buf_size)
 {
 	struct dmp_dmabuf_hash_entry *obj;
 	struct scatterlist *sg;
@@ -290,10 +291,10 @@ static size_t conf_size(unsigned int topo)
  *
  **************************************/
 static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
-			      dmp_dv_kcmdraw __user *user_cmd, size_t size)
+			      struct dmp_dv_kcmdraw __user *user_cmd, size_t size)
 {
 	struct dmp_cmb_list_entry *cmb_node;
-	dmp_dv_kcmdraw_conv_v0 *cmd;
+	struct dmp_dv_kcmdraw_conv_v0 *cmd;
 	struct conv_configuration *conv;
 	size_t cmd_size, conv_len;
 	uint32_t *cmd_buf;
@@ -307,8 +308,8 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 	int ret, valid_multi_run = 1;
 
 	// there should be at least one run
-	if (size < sizeof(dmp_dv_kcmdraw_conv_v0) - 31 *
-	    sizeof(dmp_dv_kcmdraw_conv_v0_run)) {
+	if (size < sizeof(struct dmp_dv_kcmdraw_conv_v0) - 31 *
+	    sizeof(struct dmp_dv_kcmdraw_conv_v0_run)) {
 		pr_warn(DRM_DEV_NAME ": Command size is too small\n");
 		return -EINVAL;
 	}
@@ -324,8 +325,8 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 	}
 
 	runs = topo_num_runs(cmd->topo);
-	if (size < sizeof(dmp_dv_kcmdraw_conv_v0) - (32 - runs) *
-	    sizeof(dmp_dv_kcmdraw_conv_v0_run)) {
+	if (size < sizeof(struct dmp_dv_kcmdraw_conv_v0) - (32 - runs) *
+	    sizeof(struct dmp_dv_kcmdraw_conv_v0_run)) {
 		kfree(cmd);
 		pr_warn(DRM_DEV_NAME ": Invalid runs=%u\n", runs);
 		return -EINVAL;
@@ -477,7 +478,7 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 			kfree(cmd);
 			return -EINVAL;
 		}
-		ubuf_size = ubuf_get_single_tile_usage((dmp_dv_kcmdraw_conv_v0*)cmd, UNIFIED_BUFFER_SIZE);
+		ubuf_size = ubuf_get_single_tile_usage((struct dmp_dv_kcmdraw_conv_v0*)cmd, UNIFIED_BUFFER_SIZE);
 		if (ubuf_size > UNIFIED_BUFFER_SIZE) {
 			kfree(cmd);
 			pr_warn(DRM_DEV_NAME ": Configuration %dx%dx%d requires unified buffer of size %d\n",
@@ -502,12 +503,12 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 }
 
 int dv_convert_conv_command(struct device *dev, struct dmp_cmb *cmb,
-			    dmp_dv_kcmd *cmd_info)
+			    struct dmp_dv_kcmd *cmd_info)
 {
 	int i;
 	int ret = 0;
-	dmp_dv_kcmdraw __user *user_cmds;
-	dmp_dv_kcmdraw cmd;
+	struct dmp_dv_kcmdraw __user *user_cmds;
+	struct dmp_dv_kcmdraw cmd;
 
 	user_cmds = u64_to_user_ptr(cmd_info->cmd_pointer);
 
@@ -525,8 +526,8 @@ int dv_convert_conv_command(struct device *dev, struct dmp_cmb *cmb,
 			pr_err(DRM_DEV_NAME ": Invalid command version.\n");
 			return -EINVAL;
 		}
-		user_cmds = (dmp_dv_kcmdraw __user *)((uint8_t *)user_cmds +
-						      cmd.size);
+		user_cmds = (struct dmp_dv_kcmdraw __user *)
+			((uint8_t*)user_cmds + cmd.size);
 	}
 
 	return ret;
@@ -565,10 +566,10 @@ void dv_run_conv_command(struct dmp_cmb *cmb, void *bar_logical)
 }
 
 static int dv_convert_fc_v0(struct device *dev, struct dmp_cmb *cmb,
-			      dmp_dv_kcmdraw __user *user_cmd, size_t size)
+			    struct dmp_dv_kcmdraw __user *user_cmd, size_t size)
 {
 	struct dmp_cmb_list_entry *cmb_node;
-	dmp_dv_kcmdraw_fc_v0 cmd;
+	struct dmp_dv_kcmdraw_fc_v0 cmd;
 	size_t cmd_size;
 	uint32_t *cmd_buf;
 	uint32_t input_base_addr, input_buf_size;
@@ -577,7 +578,7 @@ static int dv_convert_fc_v0(struct device *dev, struct dmp_cmb *cmb,
 	uint32_t weight_size = 0;
 	int ret;
 
-	if (size < sizeof(dmp_dv_kcmdraw_fc_v0))
+	if (size < sizeof(struct dmp_dv_kcmdraw_fc_v0))
 		return -EINVAL;
 
 	if (copy_from_user(&cmd, user_cmd, size))
@@ -710,12 +711,12 @@ static int dv_convert_fc_v0(struct device *dev, struct dmp_cmb *cmb,
 }
 
 int dv_convert_fc_command(struct device *dev, struct dmp_cmb *cmb,
-			  struct dmp_dv_kcmd_impl *cmd_info)
+			  struct dmp_dv_kcmd *cmd_info)
 {
 	int i;
 	int ret = 0;
-	dmp_dv_kcmdraw __user *user_cmds;
-	dmp_dv_kcmdraw cmd;
+	struct dmp_dv_kcmdraw __user *user_cmds;
+	struct dmp_dv_kcmdraw cmd;
 
 	user_cmds = u64_to_user_ptr(cmd_info->cmd_pointer);
 
@@ -733,8 +734,8 @@ int dv_convert_fc_command(struct device *dev, struct dmp_cmb *cmb,
 			pr_err(DRM_DEV_NAME ": Invalid command version.\n");
 			return -EINVAL;
 		}
-		user_cmds = (dmp_dv_kcmdraw __user *)((uint8_t *)user_cmds +
-						      cmd.size);
+		user_cmds = (struct dmp_dv_kcmdraw __user *)
+			((uint8_t*)user_cmds + cmd.size);
 	}
 
 	return ret;

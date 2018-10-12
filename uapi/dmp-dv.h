@@ -22,30 +22,26 @@
 #include <linux/types.h>
 
 /// @brief Memory buffer specification.
-typedef struct dmp_dv_kbuf_impl {
+struct dmp_dv_kbuf {
 	__s32 fd;    // ION file descriptor
 	__u32 rsvd;  // padding to 64-bit size
 	__u64 offs;  // offset from the start of the buffer
-} dmp_dv_kbuf;
+};
 
 /// @brief Raw command for execution.
-typedef struct dmp_dv_kcmdraw_impl {
+struct dmp_dv_kcmdraw {
 	__u32 size;     // size of this structure
 	__u32 version;  // version of this structure
-} dmp_dv_kcmdraw;
+};
 
-/**
- * struct dmp_dv_kcmd - cmd data passed from userspace to append to cmd buffer.
- * @cmd_num:		Number of cmds stored in the cmd_pointer.
- * @cmd_pointer:	Pointer to the array of cmd data.
- */
-typedef struct dmp_dv_kcmd_impl {
-	__u32 cmd_num;
-	__u32 reserved0; /* align to 64bits */
-	__u64 cmd_pointer;
-} dmp_dv_kcmd;
+/// @brief Data passed from userspace to append to cmd buffer.
+struct dmp_dv_kcmd {
+	__u32 cmd_num;      // number of commands stored in the cmd_pointer
+	__u32 rsvd;         // padding to 64-bit size
+	__u64 cmd_pointer;  // pointer to the commands data
+};
 
-#define DMP_DV_IOC_MAGIC		0x82
+#define DMP_DV_IOC_MAGIC 0x82
 
 /**
  * DOC: DMP_DV_IOC_APPEND_CMD - Append command(s) to the command buffer.
@@ -56,7 +52,7 @@ typedef struct dmp_dv_kcmd_impl {
  *
  * If there is not enough memory for the command buffer, returns -ENOMEM.
  */
-#define DMP_DV_IOC_APPEND_CMD		_IOW(DMP_DV_IOC_MAGIC, 1, dmp_dv_kcmd)
+#define DMP_DV_IOC_APPEND_CMD _IOW(DMP_DV_IOC_MAGIC, 1, struct dmp_dv_kcmd)
 
 /**
  * DOC: DMP_DV_IOC_RUN - Run all commands in the command buffer.
@@ -64,7 +60,7 @@ typedef struct dmp_dv_kcmd_impl {
  * Queue all commands in the current command buffer to be run by HW.
  * Returns the command run ID.
  */
-#define DMP_DV_IOC_RUN			_IOR(DMP_DV_IOC_MAGIC, 2, __u64)
+#define DMP_DV_IOC_RUN _IOR(DMP_DV_IOC_MAGIC, 2, __u64)
 
 /**
  * DOC: DMP_DV_IOC_WAIT - Wait for the previously run to finish.
@@ -72,6 +68,6 @@ typedef struct dmp_dv_kcmd_impl {
  * Wait for the specified run ID to be finished.
  * Immediately return if the specified ID is already finished.
  */
-#define DMP_DV_IOC_WAIT			_IOW(DMP_DV_IOC_MAGIC, 3, __u64)
+#define DMP_DV_IOC_WAIT _IOW(DMP_DV_IOC_MAGIC, 3, __u64)
 
 #endif  // _UAPI_LINUX_DMP_DV_H

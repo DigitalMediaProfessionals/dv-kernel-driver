@@ -28,8 +28,9 @@
 
 /// @brief Convolution layer runs.
 /// @details Members within structure are rearranged by size to avoid requirements for 64-bits padding in the middle.
-typedef struct dmp_dv_kcmdraw_conv_v0_run_impl {
-	dmp_dv_kbuf weight_buf;  // Buffer with packed weights
+struct dmp_dv_kcmdraw_conv_v0_run {
+	struct dmp_dv_kbuf weight_buf;  // Buffer with packed weights
+
 	__u32 conv_pad;          // Bits [6:0] = left padding, bits [15:8] = right padding, bits [22:16] = top padding, bits [31:24] = bottom padding
 	__u32 pool_pad;          // Bits [7:0] = left padding, bits [15:8] = right padding, bits [23:16] = top padding, bits [31:24] = bottom padding
 	__u16 m;                 // Number of Output Channels
@@ -48,44 +49,45 @@ typedef struct dmp_dv_kcmdraw_conv_v0_run_impl {
 	__u16 rectifi_en;        // Rectification, i.e. max(0, x) (NOTE: Can be applied after non-ReLU activation function)
 	__u16 lrn;               // Bits [0]: 1 = LRN enable, 0 = LRN disable, [1]: 1 = incl. power func, 0 = excl., [8:11]: x^2 scale factor log2
 	__u16 rsvd;              // padding to 64-bit size
-} dmp_dv_kcmdraw_conv_v0_run;
+};
 
 
 /// @brief Raw command for convolutional block version 0.
-typedef struct dmp_dv_kcmdraw_conv_v0_impl {
-	__u32 size;                          // size of this structure
-	__u32 version;                       // version of this structure
-	dmp_dv_kbuf input_buf;               // Input buffer
-	dmp_dv_kbuf output_buf;              // Output buffer
-	dmp_dv_kbuf eltwise_buf;             // Buffer for elementwise add (0 = UBUF Input Buffer)
-	__u32 topo;                          // [31:0] Output Destination of each run, 0 = UBUF, 1 = EXTMEM
-	__u16 w;                             // Input Width
-	__u16 h;                             // Input Height
-	__u16 z;                             // Input Depth
-	__u16 c;                             // Input Channels
-	__u16 input_circular_offset;         // Input Depth circular offset
-	__u16 output_mode;                   // 0 = concat, 1 = elementwise add
-	dmp_dv_kcmdraw_conv_v0_run run[32];  // description of each run
-} dmp_dv_kcmdraw_conv_v0;
+struct dmp_dv_kcmdraw_conv_v0 {
+	struct dmp_dv_kcmdraw header;  // General structure information 
+
+	struct dmp_dv_kbuf input_buf;    // Input buffer
+	struct dmp_dv_kbuf output_buf;   // Output buffer
+	struct dmp_dv_kbuf eltwise_buf;  // Buffer for elementwise add (0 = UBUF Input Buffer)
+
+	__u32 topo;                   // [31:0] Output Destination of each run, 0 = UBUF, 1 = EXTMEM
+	__u16 w;                      // Input Width
+	__u16 h;                      // Input Height
+	__u16 z;                      // Input Depth
+	__u16 c;                      // Input Channels
+	__u16 input_circular_offset;  // Input Depth circular offset
+	__u16 output_mode;            // 0 = concat, 1 = elementwise add
+
+	struct dmp_dv_kcmdraw_conv_v0_run run[32];  // Description of each run
+};
 
 
 /// @brief Raw command for fully connected block version 0.
-typedef struct dmp_dv_kcmdraw_fc_v0_impl {
-	__u32 size;              // size of this structure
-	__u32 version;           // version of this structure
-	dmp_dv_kbuf weight_buf;  // Buffer with packed weights
-	dmp_dv_kbuf input_buf;   // Input buffer
-	dmp_dv_kbuf output_buf;  // Output buffer
+struct dmp_dv_kcmdraw_fc_v0 {
+	struct dmp_dv_kcmdraw header;  // General structure information
 
-	__u16 input_size;        // Size of the input in elements
-	__u16 output_size;       // Size of the output in elements
+	struct dmp_dv_kbuf weight_buf;  // Buffer with packed weights
+	struct dmp_dv_kbuf input_buf;   // Input buffer
+	struct dmp_dv_kbuf output_buf;  // Output buffer
 
-	__u16 weight_fmt;        // Weights format: 0 = half-float unquantized, 1 = 8-bit quantized
+	__u16 input_size;     // Size of the input in elements
+	__u16 output_size;    // Size of the output in elements
 
-	__u16 actfunc;           // Activation Function: 0 = None, 1 = ReLU, 2 = Tanh, 3 = Leaky ReLU, 4 = Sigmoid, 5 = PReLU (PReLU must be used with POST-OP=1)
-	__u16 actfunc_param;     // Leaky ReLU parameter (in FP16 format), 0 = non-leaky
-	__u16 rsvd[3];           // padding to 64-bit size
-} dmp_dv_kcmdraw_fc_v0;
+	__u16 weight_fmt;     // Weights format: 0 = half-float unquantized, 1 = 8-bit quantized
 
+	__u16 actfunc;        // Activation Function: 0 = None, 1 = ReLU, 2 = Tanh, 3 = Leaky ReLU, 4 = Sigmoid, 5 = PReLU (PReLU must be used with POST-OP=1)
+	__u16 actfunc_param;  // Leaky ReLU parameter (in FP16 format), 0 = non-leaky
+	__u16 rsvd[3];        // padding to 64-bit size
+};
 
 #endif  // _UAPI_LINUX_DMP_DV_CMDRAW_V0_H

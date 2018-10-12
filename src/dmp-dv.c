@@ -199,7 +199,7 @@ static int drm_release(struct inode *inode, struct file *file)
 }
 
 static int (*cmd_func[DRM_NUM_SUBDEV])(struct device *, struct dmp_cmb *,
-		struct dmp_dv_kcmd_impl *) = {
+				       struct dmp_dv_kcmd *) = {
 	dv_convert_conv_command,
 	dv_convert_fc_command,
 };
@@ -217,7 +217,7 @@ static long drm_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		container_of(inode->i_cdev, struct drm_dev, cdev);
 	struct dmp_dev_private *dev_pri = file->private_data;
 	struct dv_cmd_work_item *wo;
-	dmp_dv_kcmd cmd_info;
+	struct dmp_dv_kcmd cmd_info;
 	uint64_t cmd_id;
 	unsigned int minor = iminor(inode);
 

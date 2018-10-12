@@ -33,7 +33,7 @@
 
 
 /// @brief Returns width of the grid of nodes.
-static int conf_node_w(dmp_dv_kcmdraw_conv_v0 *conf)
+static inline int conf_node_w(const struct dmp_dv_kcmdraw_conv_v0 *conf)
 {
 	uint32_t i = conf->topo;
 	int n = 0;
@@ -56,7 +56,7 @@ static inline int topo_num_runs(uint32_t topo)
 
 
 /// @brief Returns the peak utilization of unified buffer in bytes in case when tiles = 1.
-static int ubuf_get_single_tile_usage(dmp_dv_kcmdraw_conv_v0 *conf, int ubuf_size)
+static int ubuf_get_single_tile_usage(const struct dmp_dv_kcmdraw_conv_v0 *conf, int ubuf_size)
 {
 	int max_ubuf_addr, runs, node_w, m_tot, t, i, run, run_w,
 	    is_input_node, is_output_node, max_ubuf_addr_run;
@@ -392,7 +392,7 @@ static uint16_t get_conv_2d_tiles(int w, int h, int c, int kx, int ky, int m,
 
 
 /// @brief Returns non-zero if the provided run specifies 2D convolution.
-static inline int is_conv_2d_v0(const dmp_dv_kcmdraw_conv_v0_run *run) {
+static inline int is_conv_2d_v0(const struct dmp_dv_kcmdraw_conv_v0_run *run) {
 	return ((run->conv_enable & 2) || (!run->conv_enable)) ? 0 : 1;
 }
 
@@ -475,7 +475,7 @@ static int calc_num_tiles_conv_lrn(
 /// @param cmd Command for execution.
 /// @param ubuf_size Unified buffer size.
 /// @return Non-zero on success, 0 when the layer dimensions are too large.
-static uint16_t get_conv_tiles_v0(const dmp_dv_kcmdraw_conv_v0 *cmd, int ub_size)
+static uint16_t get_conv_tiles_v0(const struct dmp_dv_kcmdraw_conv_v0 *cmd, int ub_size)
 {
 	int w, h, c, m, kx, ky;
 	int pad[4], stride[2];
@@ -584,7 +584,7 @@ static inline void init_conv_input_size_v0_4(
 
 /// @brief Assigns input size.
 static inline void init_conv_input_size_v0(
-		const dmp_dv_kcmdraw_conv_v0 *cmd,
+		const struct dmp_dv_kcmdraw_conv_v0 *cmd,
 		struct conv_data_size *in_size) {
 	init_conv_input_size_v0_4(cmd->w, cmd->h, cmd->z, cmd->c, in_size);
 }
@@ -592,8 +592,8 @@ static inline void init_conv_input_size_v0(
 
 /// @brief Fills output size and weights size for layer configuration version 0.
 static void get_conv_output_size_v0(
-		dmp_dv_kcmdraw_conv_v0_run *run,
-		struct conv_data_size *in_size,
+		const struct dmp_dv_kcmdraw_conv_v0_run *run,
+		const struct conv_data_size *in_size,
 		struct conv_data_size *out_size,
 		uint32_t *w_size) {
 

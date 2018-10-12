@@ -26,7 +26,7 @@
 #define DRM_MAX_WAIT_COUNT 10
 
 struct device;
-struct dmp_dv_kcmd_impl;
+struct dmp_dv_kcmd;
 struct dmp_cmb;
 
 extern uint32_t UNIFIED_BUFFER_SIZE;
@@ -36,10 +36,10 @@ extern uint32_t MAX_FC_VECTOR_SIZE;
 struct dmp_cmb *dv_cmb_init(struct device *dev);
 void dv_cmb_finalize(struct device *dev, struct dmp_cmb *cmb);
 int dv_convert_conv_command(struct device *dev, struct dmp_cmb *cmb,
-			    struct dmp_dv_kcmd_impl *cmd_info);
+			    struct dmp_dv_kcmd *cmd_info);
 void dv_run_conv_command(struct dmp_cmb *cmb, void *bar_logical);
 int dv_convert_fc_command(struct device *dev, struct dmp_cmb *cmb,
-			  struct dmp_dv_kcmd_impl *cmd_info);
+			  struct dmp_dv_kcmd *cmd_info);
 void dv_run_fc_command(struct dmp_cmb *cmb, void *bar_logical);
 
 #endif

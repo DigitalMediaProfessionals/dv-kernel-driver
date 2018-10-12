@@ -43,7 +43,7 @@ install:
 	cp $(MOD).ko /lib/modules/`uname -r`/
 	echo depmod -a
 	depmod -a
-	echo To reload the module, execute: rmmod $(MOD) \&\& modprobe $(MOD)
+	echo To reload the module, execute: sudo rmmod $(MOD) \&\& sudo modprobe $(MOD)
 
 clean:
 	rm -rf *.ko *.o *.order src/*.o .tmp_vers* *.symvers *.mod.c .dmp* src/.*.cmd
