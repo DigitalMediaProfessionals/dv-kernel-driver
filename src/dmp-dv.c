@@ -134,8 +134,11 @@ static int wait_cmd_id(struct dmp_dev *dev, uint64_t cmd_id)
 
 	if (ret > 0)
 		return 0;
-	else if (ret == 0)
+	else if (ret == 0) {
+		pr_warn(DRM_DEV_NAME ": timeout: cmd_id=%lld, DEBUG_HW_0=%08X\n",
+			(long long)cmd_id, ioread32(REG_IO_ADDR(dev, 0x00E0)));
 		return -EBUSY;
+	}
 	return ret;
 }
 
