@@ -622,6 +622,7 @@ static int dv_convert_fc_v0(struct device *dev, struct dmp_cmb *cmb,
 	} else
 		return -EINVAL;
 	weight_size = bias_addr - weight_base_addr + cmd.output_size * 2;
+	weight_size = ALIGN(weight_size, 16);
 	if (weight_buf_size < weight_size) {
 		pr_warn(DRM_DEV_NAME ": FC weight buffer size %u less than required %u\n",
 			weight_buf_size, weight_size);
