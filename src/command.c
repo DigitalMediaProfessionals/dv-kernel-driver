@@ -773,3 +773,46 @@ void dv_run_fc_command(struct dmp_cmb *cmb, void *bar_logical)
 	iowrite32(prev_addr, REG_IO_ADDR(bar_logical, 0x4));
 	iowrite32(0x1, REG_IO_ADDR(bar_logical, 0x8));
 }
+
+
+static int dv_convert_ipu_v0(struct device *dev, struct dmp_cmb *cmb,
+			    struct dmp_dv_kcmdraw __user *user_cmd, size_t size)
+{
+	//TODO: implement
+}
+
+int dv_convert_ipu_command(struct device *dev, struct dmp_cmb *cmb,
+			  struct dmp_dv_kcmd *cmd_info)
+{
+	int i;
+	int ret = 0;
+	struct dmp_dv_kcmdraw __user *user_cmds;
+	struct dmp_dv_kcmdraw cmd;
+
+	user_cmds = u64_to_user_ptr(cmd_info->cmd_pointer);
+
+	for (i = 0; i < cmd_info->cmd_num; ++i) {
+		// get size and version first;
+		if (copy_from_user(&cmd, user_cmds, sizeof(cmd)))
+			return -EFAULT;
+		switch (cmd.version) {
+		case 0:
+			ret = dv_convert_ipu_v0(dev, cmb, user_cmds, cmd.size);
+			if (ret)
+				return ret;
+			break;
+		default:
+			pr_err(DRM_DEV_NAME ": Invalid command version.\n");
+			return -EINVAL;
+		}
+		user_cmds = (struct dmp_dv_kcmdraw __user *)
+			((uint8_t*)user_cmds + cmd.size);
+	}
+
+	return ret;
+}
+
+void dv_run_ipu_command(struct dmp_cmb *cmb, void *bar_logical)
+{
+	//TODO: implement
+}

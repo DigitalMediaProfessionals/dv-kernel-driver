@@ -50,13 +50,13 @@
 #define REG_IO_ADDR(DV, OF) ((void __iomem *)(DV->bar_logical) + OF)
 
 #ifndef USE_DEVTREE
-static int irq_no[2] = { 48, 49 };
+static int irq_no[DRM_NUM_SUBDEV] = { 48, 49 };
 static unsigned int reg_base = 0x80000000;
 #endif
-static unsigned int reg_offset[2] = { 0x0, 0x1000 };
-static unsigned int reg_size[2] = { 0x1000, 0x1000 };
-static int irq_addr[2] = { 0x420, 0x20 };
-static const char *subdev_name[2] = { "conv", "fc" };
+static unsigned int reg_offset[DRM_NUM_SUBDEV] = { 0x0, 0x1000 };
+static unsigned int reg_size[DRM_NUM_SUBDEV] = { 0x1000, 0x1000 };
+static int irq_addr[DRM_NUM_SUBDEV] = { 0x420, 0x20 };
+static const char *subdev_name[DRM_NUM_SUBDEV] = { "conv", "fc" };
 
 #define DEF_UNIFIED_BUFFER_SIZE_KB 640
 uint32_t UNIFIED_BUFFER_SIZE = DEF_UNIFIED_BUFFER_SIZE_KB << 10;
@@ -205,11 +205,13 @@ static int (*cmd_func[DRM_NUM_SUBDEV])(struct device *, struct dmp_cmb *,
 				       struct dmp_dv_kcmd *) = {
 	dv_convert_conv_command,
 	dv_convert_fc_command,
+	dv_convert_ipu_command,
 };
 
 static void (*run_func[DRM_NUM_SUBDEV])(struct dmp_cmb *, void *) = {
 	dv_run_conv_command,
 	dv_run_fc_command,
+	dv_run_ipu_command,
 };
 
 static long drm_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
