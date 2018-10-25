@@ -310,7 +310,9 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 	// there should be at least one run
 	if (size < sizeof(struct dmp_dv_kcmdraw_conv_v0) - 31 *
 	    sizeof(struct dmp_dv_kcmdraw_conv_v0_run)) {
-		pr_warn(DRM_DEV_NAME ": Command size is too small\n");
+		pr_warn(DRM_DEV_NAME ": Command size is too small: %zu < %zu\n",
+			size, sizeof(struct dmp_dv_kcmdraw_conv_v0) - 31 *
+			sizeof(struct dmp_dv_kcmdraw_conv_v0_run));
 		return -EINVAL;
 	}
 
@@ -514,8 +516,10 @@ int dv_convert_conv_command(struct device *dev, struct dmp_cmb *cmb,
 
 	for (i = 0; i < cmd_info->cmd_num; ++i) {
 		// get size and version first;
-		if (copy_from_user(&cmd, user_cmds, sizeof(cmd)))
+		if (copy_from_user(&cmd, user_cmds, sizeof(cmd))) {
+			pr_warn(DRM_DEV_NAME ": Invalid CONV command pointer: copy_from_user() failed\n");
 			return -EFAULT;
+		}
 		switch (cmd.version) {
 		case 0:
 			ret = dv_convert_conv_v0(dev, cmb, user_cmds, cmd.size);
@@ -523,7 +527,8 @@ int dv_convert_conv_command(struct device *dev, struct dmp_cmb *cmb,
 				return ret;
 			break;
 		default:
-			pr_err(DRM_DEV_NAME ": Invalid command version.\n");
+			pr_warn(DRM_DEV_NAME ": Invalid CONV command version: %u\n",
+			        cmd.version);
 			return -EINVAL;
 		}
 		user_cmds = (struct dmp_dv_kcmdraw __user *)
