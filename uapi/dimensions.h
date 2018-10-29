@@ -519,7 +519,8 @@ static uint16_t get_conv_tiles_v0(const struct dmp_dv_kcmdraw_conv_v0 *cmd, int 
 /// @param k Kernel size: max(kx, ky) | 1.
 /// @param quantized Use quantized weights or not.
 /// @param dw Use depth-wise convolution or not.
-static uint32_t get_weight_size(int c, int m, int k, int quantized, int dw)
+/// @param prelu The activation is prelu or not.
+static uint32_t get_weight_size(int c, int m, int k, int quantized, int dw, int prelu)
 {
 	uint32_t res;
 	if (dw) {
@@ -537,9 +538,13 @@ static uint32_t get_weight_size(int c, int m, int k, int quantized, int dw)
 
 	if (quantized) {
 		res = 512 + 72 * m * c + 16 * ((m + 7) / 8);
+		res = (res + 0xf) & (~0xf);
 	}
 	else {
 		res = 144 * m * c + 16 * ((m + 7) / 8);
+	}
+	if (prelu) {
+		res += 16 * ((m + 7) / 8);
 	}
 	return res;
 }
@@ -558,7 +563,7 @@ static uint32_t get_weight_size_dil(int c, int m, int kx, int ky, int quantized)
 	int i, d;
 
 	for (i = 0; i < n; i++) {
-		res += get_weight_size(c, m, 1, quantized, 0);
+		res += get_weight_size(c, m, 1, quantized, 0, 0);
 		if (quantized)
 			res -= 512;
 		d = res & 15;
@@ -635,7 +640,7 @@ static void get_conv_output_size_v0(
 		if ((dil_x == 1) && (dil_y == 1))
 			*w_size = get_weight_size(
 				in_c, m, ((px > py) ? px : py) | 1, (run->weight_fmt & 2),
-				(run->conv_enable & 2));
+				(run->conv_enable & 2), (run->actfunc == 4));
 		else
 			*w_size = get_weight_size_dil(in_c, m, px, py, (run->weight_fmt & 2));
 	}
