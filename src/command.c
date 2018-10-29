@@ -575,7 +575,6 @@ static int dv_convert_fc_v0(struct device *dev, struct dmp_cmb *cmb,
 	uint32_t input_base_addr, input_buf_size;
 	uint32_t output_base_addr, output_buf_size;
 	uint32_t weight_base_addr, weight_buf_size, weight_addr, bias_addr;
-	uint32_t prelu_addr = 0;
 	uint32_t weight_size = 0;
 	int ret;
 
@@ -624,11 +623,6 @@ static int dv_convert_fc_v0(struct device *dev, struct dmp_cmb *cmb,
 		return -EINVAL;
 	weight_size = bias_addr - weight_base_addr + cmd.output_size * 2;
 	weight_size = ALIGN(weight_size, 16);
-	if (cmd.actfunc == 5) {
-		prelu_addr = weight_base_addr + weight_size;
-		weight_size += cmd.output_size * 2;
-		weight_size = ALIGN(weight_size, 16);
-	}
 	if (weight_buf_size < weight_size) {
 		pr_warn(DRM_DEV_NAME ": FC weight buffer size %u less than required %u\n",
 			weight_buf_size, weight_size);
@@ -638,8 +632,6 @@ static int dv_convert_fc_v0(struct device *dev, struct dmp_cmb *cmb,
 	cmb_node = list_first_entry(&cmb->cmb_list, struct dmp_cmb_list_entry,
 				    list_node);
 	cmd_size = sizeof(uint32_t) * (16 + (cmd.weight_fmt ? 257 : 0));
-	if (cmd.actfunc == 5)
-		cmd_size += sizeof(uint32_t) * 2;
 	// include size of jump or interrupt commands
 	if (cmb_node->size + cmd_size + 8 > cmb_node->capacity) {
 		cmb_node = dv_cmb_allocate(dev);
@@ -651,7 +643,7 @@ static int dv_convert_fc_v0(struct device *dev, struct dmp_cmb *cmb,
 
 	cmd_buf[0] = 0x0011f00e; // Write 2 words to 0x11..0x12
 	cmd_buf[1] = 0x00000220 | (cmd.weight_fmt ? 0x3 : 0x2); // format
-	cmd_buf[2] = ((cmd.actfunc & 0x7) << 4) | (prelu_addr ? 0x100 : 0); // mode
+	cmd_buf[2] = ((cmd.actfunc & 0x7) << 4); // mode
 	cmd_buf[3] = 0x0014f026; // Write 5 words to 0x14..0x18
 	cmd_buf[4] = cmd.input_size; // input size
 	cmd_buf[5] = cmd.output_size; // output size
@@ -663,15 +655,8 @@ static int dv_convert_fc_v0(struct device *dev, struct dmp_cmb *cmb,
 	cmd_buf[11] = 0x001ff00e; // Write 2 words to 0x1f..0x20
 	cmd_buf[12] = cmd.input_size * (cmd.weight_fmt ? 1 : 2); // stride
 	cmd_buf[13] = weight_addr; // weight addr0
-	if (prelu_addr) {
-		cmd_buf[14 + (cmd.weight_fmt ? 257 : 0)] = 0x0040f004; // Write 1 word to 0x40
-		cmd_buf[15 + (cmd.weight_fmt ? 257 : 0)] = prelu_addr; // post-op term address
-		cmd_buf[16 + (cmd.weight_fmt ? 257 : 0)] = 0x0010f004; // Write 1 word to 0x10
-		cmd_buf[17 + (cmd.weight_fmt ? 257 : 0)] = 0x2;
-	} else {
-		cmd_buf[14 + (cmd.weight_fmt ? 257 : 0)] = 0x0010f004; // Write 1 word to 0x10
-		cmd_buf[15 + (cmd.weight_fmt ? 257 : 0)] = 0x2;
-	}
+	cmd_buf[14 + (cmd.weight_fmt ? 257 : 0)] = 0x0010f004; // Write 1 word to 0x10
+	cmd_buf[15 + (cmd.weight_fmt ? 257 : 0)] = 0x2;
 
 	if (cmd.weight_fmt) {
 		struct dma_buf *dma_buf;
