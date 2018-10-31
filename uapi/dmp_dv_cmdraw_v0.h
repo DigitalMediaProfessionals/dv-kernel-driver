@@ -116,6 +116,7 @@ struct dmp_dv_kcmdraw_ipu_v0 {
 	__s32 stride_wr;  	  	// stride for write buffer
 	
 	struct dmp_dv_kbuf lut;		      	// look up table for texture of DMP_DV_LUT. If lut.mem == NULL, the look up table used at the last time is used.
+	__u8 ncolor_lut;			// number of color in lut
 
 	__u8 alpha;  	      	// alpha value for blending
 
@@ -145,8 +146,6 @@ struct dmp_dv_kcmdraw_ipu_v0 {
 	 */
 	__u8 cnv_type;       	// conversion type
 	__u8 cnv_param[3];   	// conversion parameter
-
-	__u8 rsvd[1]; 			// padding to 64-bit size
 };
 
 #endif  // _UAPI_LINUX_DMP_DV_CMDRAW_V0_H
