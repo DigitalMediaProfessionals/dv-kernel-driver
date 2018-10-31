@@ -129,9 +129,8 @@ struct dmp_dv_kcmdraw_ipu_v0 {
 
 	/** swizzle
 	 * Specify an order of RGBA in texture buffer
-	 * aidx can be -1 if the texture not contain alpha channel.
-	 *   - If aidx is -1 ridx, gidx and bidx must be in {0, 1, 2} without overlap.
-	 *   - Otherwize, ridx, gidx, bidx and aidx must be in {0, 1, 2, 3} without overlap.
+	 *   - If fmt_tex is DMP_DV_RGB888: aidx is ignored. ridx, gidx and bidx must be in {0, 1, 2} without overlap.
+	 *   - If fmt_tex is DMP_DV_RGBA8888 or DMP_DV_LUT: ridx, gidx, bidx and aidx must be in {0, 1, 2, 3} without overlap.
 	 */
 	__s8 ridx;  		      	// index of red channel
 	__s8 gidx;  		      	// index of green channel
