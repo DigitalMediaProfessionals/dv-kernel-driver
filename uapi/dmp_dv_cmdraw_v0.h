@@ -123,7 +123,7 @@ struct dmp_dv_kcmdraw_ipu_v0 {
 	/* operation flags */
 	__u8 transpose;  	  	// exchange x-y axis of texture
 	__u8 use_const_alpha;	// use alpha in this structure for blending
-	__u8 use_texture;  		// use texture in this structure
+	__u8 use_tex; 	 		// use texture in this structure
 	__u8 use_rd;  	      	// use rd in this structure
 	__u8 BLF;  		      	// apply bilinear filter
 
