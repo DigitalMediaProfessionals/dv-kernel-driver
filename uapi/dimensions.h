@@ -350,54 +350,13 @@ static inline int get_conv_out_width(int width, int kx, int pad_left, int pad_ri
 }
 
 
-/// @brief Returns number of tiles required to execute 2D convolutional configuration with the provided unified buffer size.
-/// @param w Input width.
-/// @param h Input height.
-/// @param c Input channels.
-/// @param kx Kernel width.
-/// @param ky Kernel height.
-/// @param m Number of kernels.
-/// @param pad Padding: Left, Right, Top, Bottom.
-/// @param stride Stride: X, Y.
-/// @param ub_size Unified buffer size in bytes.
-static uint16_t get_conv_2d_tiles(int w, int h, int c, int kx, int ky, int m,
-				  const int pad[4], const int stride[2],
-				  int ub_size)
-{
-	int t, c_blocks, tw, ow, oh, os, ts_blk16, ts_blk128, ts_128, ts, uu;
-
-	c_blocks = (c >> 3) + (c & 7 ? 1 : 0);
-
-	t = 0;
-	while (t < w) {
-		++t;
-		tw = (w / t + (w % t ? 1 : 0)) + ((kx > ky ? kx : ky) | 1) - 1;	// width of a tile
-		ow = get_conv_out_width(tw, kx, pad[0], pad[1], stride[0]);
-		oh = get_conv_out_width(h, ky, pad[2], pad[3], stride[1]);
-		os = ow * oh * (m < 8 ? m : 8);	// output buffer size
-		ts_blk16 = tw * h * (c < 8 ? c : 8);	// tile size for a segment
-		ts_blk128 = (ts_blk16 >> 3) + (ts_blk16 & 7 ? 1 : 0);
-		ts_blk128 += (2 - ts_blk128) & 15;
-		ts_128 = ts_blk128 * c_blocks;
-		ts_128 += (0 - ts_128) & 15;
-		ts = ts_128 << 3;	// input tile size in UBUF (in float16)
-		uu = ts + os;	// unified buffer utilization
-		if ((uu << 1) <= ub_size) {
-			return (uint16_t)t;
-		}
-	}
-
-	return 0;
-}
-
-
 /// @brief Returns non-zero if the provided run specifies 2D convolution.
 static inline int is_conv_2d_v0(const struct dmp_dv_kcmdraw_conv_v0_run *run) {
 	return ((run->conv_enable & 2) || (!run->conv_enable)) ? 0 : 1;
 }
 
 
-/// @brief Calculates number of tiles for LRN operation.
+/// @brief Calculates number of tiles for Convolutional and LRN layers.
 /// @param w Width of input.
 /// @param h Height of input.
 /// @param c Number of input channels.
@@ -409,50 +368,54 @@ static inline int is_conv_2d_v0(const struct dmp_dv_kcmdraw_conv_v0_run *run) {
 /// @param pad_y1 Bottom padding.
 /// @param stride_x Horizontal stride.
 /// @param stride_y Vertical stride.
-/// @param u_kb Size of unified buffer in kilo bytes.
-/// @param is_conv Is convolution enabled or not.
+/// @param u_kb Size of unified buffer in Kb.
+/// @param is_conv 1 for convolution, 0 for LRN.
 static int calc_num_tiles_conv_lrn(
 		int w, int h, int c, int m, int p,
 		int pad_x0, int pad_x1, int pad_y0, int pad_y1,
 		int stride_x, int stride_y,
-		int u_kb, int is_conv)
-{
-	int no_ub, no_ob, uu, t, tw, ts_1c, ow, oh, os, ts_blk16, ts_blk128, ts_128, ts;
+		int u_kb, int is_conv) {
+	const int u = u_kb * 1024 / 2; // size of unified buffer in number of float16
 
-	int u = u_kb * 1024 / 2; // size of unified buffer in number of float16
+	const int C_blocks = (c >> CONV_C_SUB_LOG2) + (((c & ((1 << CONV_C_SUB_LOG2) - 1)) == 0) ? 0 : 1);
 
-	int C_blocks = (c >> CONV_C_SUB_LOG2) + (((c & ((1 << CONV_C_SUB_LOG2) - 1)) == 0) ? 0 : 1);
+	int no_ub, no_ob, t, tw, ts_1c, ow, oh, os, ts_blk16, ts_blk128, ts_128, ts, uu;
 
 	// In some cases no unified buffer is needed at all
 	no_ub = 0;
 	if (is_conv) {
 		if (p <= 7) {
-			if ((c <= 8) && (m <= 8)) no_ub = 1;
+			if ((c <= 8) && (m <= 8))
+				no_ub = 1;
 		}
 		if (no_ub)
-		return 1;
+			return 1;
 	}
+
 	// In some cases no output buffer is needed
 	no_ob = 0;
 	if (is_conv) {
 		if (p <= 7) {
-			if (c <= 8) no_ob = 1;
-		} else if (p <= 11) {
-			if (c <= 4) no_ob = 1;
-		} else if (p > 11) {
-			if (c == 1) no_ob = 1;
+			if (c <= 8)
+				no_ob = 1;
+		}
+		else if (p <= 11) {
+			if (c <= 4)
+				no_ob = 1;
+		}
+		else if (p > 11) {
+			if (c == 1)
+				no_ob = 1;
 		}
 	}
 
-	uu = 0;
 	t = 0;
-	do {
+	while (t < w) {
 		t++;
-
 		tw = w / t + (w % t ? 1 : 0) + (p - 1); // width of tile
 		ts_1c = tw * h; // tile size for single channel
-		ow = (tw + pad_x0 + pad_x1 - p)/stride_x + 1;
-		oh = (h + pad_y0 + pad_y1 - p)/stride_y + 1;
+		ow = (tw + pad_x0 + pad_x1 - p) / stride_x + 1;
+		oh = (h + pad_y0 + pad_y1 - p) / stride_y + 1;
 		os = ow * oh * (m > 8 ? 8 : m); // output buffer size
 
 		ts_blk16 = ts_1c * (c > CONV_C_SUB ? CONV_C_SUB : c);
@@ -465,9 +428,72 @@ static int calc_num_tiles_conv_lrn(
 		// Input tile size in UBUF (in float16)
 		ts = (ts_128 << 3);
 		uu = ts + (no_ob ? 0 : os); // unified buffer utilization
-	} while (uu > u);
+		if (uu <= u) {
+			return t;
+		}
+	}
 
-	return t;
+	return 0;
+}
+
+
+/// @brief Calculates number of tiles for Convolutional layer.
+/// @param w Width of input.
+/// @param h Height of input.
+/// @param c Number of input channels.
+/// @param m Number of output channels.
+/// @param p Filter size.
+/// @param pad_x0 Left padding.
+/// @param pad_x1 Right padding.
+/// @param pad_y0 Top padding.
+/// @param pad_y1 Bottom padding.
+/// @param stride_x Horizontal stride.
+/// @param stride_y Vertical stride.
+/// @param u_kb Size of unified buffer in Kb.
+static int calc_num_tiles_conv(
+		int w, int h, int c, int m, int p,
+		int pad_x0, int pad_x1, int pad_y0, int pad_y1,
+		int stride_x, int stride_y,
+		int u_kb)
+{
+	return calc_num_tiles_conv_lrn(
+		w, h, c, m, p,
+		pad_x0, pad_x1, pad_y0, pad_y1,
+		stride_x, stride_y,
+		u_kb, 1);
+}
+
+
+/// @brief Calculates number of tiles for Pooling layer.
+/// @param w Width of input.
+/// @param h Height of input.
+/// @param c Number of input channels.
+static int calc_num_tiles_pool(int w, int h, int c)
+{
+	const int u = 131072 * 1024 / 2; // maximum supported buffer size in number of float16
+
+	int t = 0, uu;
+	while (t < w) {
+		t++;
+		uu = (w * h * (c > 8 ? 8 : c)) / t;
+		if (uu <= u) {
+			return t;
+		}
+	}
+
+	return 0;
+}
+
+
+/// @brief Calculates number of tiles for LRN layer.
+/// @param w Width of input.
+/// @param h Height of input.
+/// @param c Number of input channels.
+/// @param u_kb Size of unified buffer in Kb.
+static int calc_num_tiles_lrn(int w, int h, int c, int u_kb)
+{
+	return calc_num_tiles_conv_lrn(
+		w, h, c, c, 1, 0, 0, 0, 0, 1, 1, u_kb, 0);
 }
 
 
@@ -480,20 +506,8 @@ static uint16_t get_conv_tiles_v0(const struct dmp_dv_kcmdraw_conv_v0 *cmd, int 
 	int w, h, c, m, kx, ky;
 	int pad[4], stride[2];
 
-	if (topo_num_runs(cmd->topo) > 1) {
+	if (topo_num_runs(cmd->topo) > 1)
 		return 1;
-	}
-	if (cmd->run[0].lrn) {
-		return calc_num_tiles_conv_lrn(
-			cmd->w, cmd->h, cmd->c, cmd->run[0].m, cmd->run[0].p,
-			cmd->run[0].conv_pad & 0x7F, (cmd->run[0].conv_pad >> 8) & 0xFF,
-			(cmd->run[0].conv_pad >> 16) & 0x7F, (cmd->run[0].conv_pad >> 24) & 0xFF,
-			cmd->run[0].conv_stride & 0xFF, (cmd->run[0].conv_stride >> 8) & 0xFF,
-			ub_size >> 10, cmd->run[0].conv_enable);
-	}
-	if (!is_conv_2d_v0(&cmd->run[0])) {
-		return 1;
-	}
 
 	w = cmd->w;
 	h = cmd->h;
@@ -508,8 +522,19 @@ static uint16_t get_conv_tiles_v0(const struct dmp_dv_kcmdraw_conv_v0 *cmd, int 
 	stride[0] = cmd->run[0].conv_stride & 0xFF;
 	stride[1] = (cmd->run[0].conv_stride >> 8) & 0xFF;
 
-	return get_conv_2d_tiles(w, h, c, kx, ky, m, pad, stride,
-				 ub_size);
+	if (cmd->run[0].lrn & 1)
+		return calc_num_tiles_lrn(w, h, c, ub_size >> 10);
+
+	if (!is_conv_2d_v0(&cmd->run[0])) {
+		if (cmd->run[0].pool_enable)
+			return calc_num_tiles_pool(w, h, c);
+		return 1;
+	}
+
+	return calc_num_tiles_conv(
+		w, h, c, m, (kx > ky ? kx : ky) | 1,
+		pad[0], pad[1], pad[2], pad[3],
+		stride[0], stride[1], ub_size >> 10);
 }
 
 

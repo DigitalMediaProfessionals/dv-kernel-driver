@@ -323,6 +323,7 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 	}
 	if (copy_from_user(cmd, user_cmd, size)) {
 		kfree(cmd);
+		pr_warn(DRM_DEV_NAME ": copy_from_user() failed for %zu bytes\n", size);
 		return -EFAULT;
 	}
 
@@ -401,6 +402,8 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 			(int)conv->input.w, (int)conv->input.h, (int)conv->input.c);
 		return -EINVAL;
 	}
+	/*pr_info(DRM_DEV_NAME ": tiles=%d for %dx%dx%d\n",
+		(int)conv->input.tiles, (int)conv->input.w, (int)conv->input.h, (int)conv->input.c);*/
 	if (conv->input.tiles != 1)
 		valid_multi_run = 0;
 
@@ -461,8 +464,13 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 		conv->run[i].rectifi_en = cmd->run[i].rectifi_en;
 		conv->run[i].lrn = cmd->run[i].lrn;
 
-		if ((cmd->z > 1) || (cmd->run[i].pz > 1) ||
-		    (cmd->run[i].conv_dilation))  // TODO: add more checks: no maxpool_with_argmax, no unpool_with_argmax.
+		if ((conv->run[i].lrn & 1) && ((conv->run[i].conv_enable) || (conv->run[i].pool_enable) || (conv->header.topo != 1))) {
+			kfree(cmd);
+			pr_warn(DRM_DEV_NAME ": LRN must be a standalone layer\n");
+			return -EINVAL;
+		}
+
+		if ((cmd->z > 1) || (cmd->run[i].pz > 1) || (cmd->run[i].conv_dilation))  // TODO: add more checks: no maxpool_with_argmax, no unpool_with_argmax.
 			valid_multi_run = 0;
 	}
 	if (output_buf_size < total_output_size ||
@@ -489,15 +497,13 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 		}
 	}
 	/*pr_info(DRM_DEV_NAME ">>>\n");
-	for (i = 0; i < (cmd_size >> 2); ++i) {
+	for (i = 0; i < (cmd_size >> 2); ++i)
 		pr_info(DRM_DEV_NAME ": %u: %08X\n", i << 2, cmd_buf[i]);
-	}
 	pr_info(DRM_DEV_NAME "<<<\n");*/
-	/*if (conv->run[0].lrn) {
+	/*if (conv->run[0].lrn)
 		pr_info(DRM_DEV_NAME ": LRN tiles: %dx%dx%d: %d\n",
 			(int)conv->input.w, (int)conv->input.h, (int)conv->input.c,
-			(int)conv->input.tiles);
-	}*/
+			(int)conv->input.tiles);*/
 	cmb_node->size += cmd_size;
 
 	kfree(cmd);
