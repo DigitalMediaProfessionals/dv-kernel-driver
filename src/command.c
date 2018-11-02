@@ -957,6 +957,20 @@ int dv_convert_ipu_command(struct device *dev, struct dmp_cmb *cmb,
 
 void dv_run_ipu_command(struct dmp_cmb *cmb, void *bar_logical)
 {
-	//TODO: implement
-	// assume cmd must be one
+	struct dmp_cmb_list_entry *cmb_node;
+	uint32_t *cmd; // in cmd buffer
+	uint32_t offset;
+	uint32_t val;
+
+	cmb_node = list_first_entry(&cmb->cmb_list, 
+								struct dmp_cmb_list_entry, list_node);
+	cmd = (uint32_t *)(cmb_node->logical);
+	while(*cmd) {
+		offset = *cmd;
+		cmd++;
+		val = *cmd;
+		cmd++;
+		iowrite32(val, REG_IO_ADDR(bar_logical, offset));
+	}
+	iowrite32(0x1, REG_IO_ADDR(bar_logical, 0x02a0));
 }
