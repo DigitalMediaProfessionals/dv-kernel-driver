@@ -777,9 +777,9 @@ void dv_run_fc_command(struct dmp_cmb *cmb, void *bar_logical)
 
 static uint32_t dv_convert_ipu_v0_get_cmb_size(const struct dmp_dv_kcmdraw_ipu_v0 * cmd)
 {
-	uint32_t nreg = 12;
+	uint32_t nreg = 10;
 	if(cmd->use_tex) {
-		nreg += 4;
+		nreg += 6;
 	}
 	if(cmd->use_rd) {
 		nreg += 2;
@@ -835,11 +835,11 @@ static uint32_t dv_convert_ipu_v0_fill_cmb(const struct dmp_dv_kcmdraw_ipu_v0 * 
 		cmd_buf[i++] = tex_dim;
 		cmd_buf[i++] = 0x0160; // Write to 0x160
 		cmd_buf[i++] = tex_dim;
+		cmd_buf[i++] = 0x014c; // Write to 0x14c
+		cmd_buf[i++] = cmd->BLF ? 0x4 : 0;
+		cmd_buf[i++] = 0x015c; // Write to 0x15c
+		cmd_buf[i++] = 1; // 1 = LL, 0 = UL
 	}
-	cmd_buf[i++] = 0x014c; // Write to 0x14c
-	cmd_buf[i++] = cmd->BLF ? 0x4 : 0;
-	cmd_buf[i++] = 0x015c; // Write to 0x15c
-	cmd_buf[i++] = 1; // 1 = LL, 0 = UL
 	if(cmd->use_rd) {
 		cmd_buf[i++] = 0x0280; // Write to 0x280
 		cmd_buf[i++] = rd_base_addr;
