@@ -5,7 +5,7 @@ INC = -I../uapi/ -I../../dv-user-driver/include
 CFLAGS = -O0 -g -Wall -c $(INC)
 LFLAGS = -O0 -g
 
-OBJS = test.o
+OBJS = test.o common.o
 TGT  = test
 
 %.o: %.c
