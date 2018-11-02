@@ -50,13 +50,13 @@
 #define REG_IO_ADDR(DV, OF) ((void __iomem *)(DV->bar_logical) + OF)
 
 #ifndef USE_DEVTREE
-static int irq_no[DRM_NUM_SUBDEV] = { 48, 49 };
+static int irq_no[DRM_NUM_SUBDEV] = {48, 49};
 static unsigned int reg_base = 0x80000000;
 #endif
-static unsigned int reg_offset[DRM_NUM_SUBDEV] = { 0x0, 0x1000 };
-static unsigned int reg_size[DRM_NUM_SUBDEV] = { 0x1000, 0x1000 };
-static int irq_addr[DRM_NUM_SUBDEV] = { 0x420, 0x20 };
-static const char *subdev_name[DRM_NUM_SUBDEV] = { "conv", "fc" };
+static unsigned int reg_offset[DRM_NUM_SUBDEV] = {0x0, 0x1000, 0x2000};
+static unsigned int reg_size[DRM_NUM_SUBDEV] = {0x1000, 0x1000, 0x1000};
+static int irq_addr[DRM_NUM_SUBDEV] = {0x420, 0x20};
+static const char *subdev_name[DRM_NUM_SUBDEV] = {"conv", "fc", "ipu"};
 
 #define DEF_UNIFIED_BUFFER_SIZE_KB 640
 uint32_t UNIFIED_BUFFER_SIZE = DEF_UNIFIED_BUFFER_SIZE_KB << 10;
@@ -384,6 +384,10 @@ static struct attribute *drm_fc_attrs[] = {
 	NULL
 };
 
+static struct attribute *drm_ipu_attrs[] = {
+	NULL
+};
+
 static struct bin_attribute drm_firmware_attr = {
 	.attr =
 		{
@@ -408,6 +412,10 @@ static const struct attribute_group drm_fc_attr_group = {
 	.attrs = drm_fc_attrs,
 };
 
+static const struct attribute_group drm_fc_attr_group = {
+	.attrs = drm_ipu_attrs,
+};
+
 static const struct attribute_group *drm_conv_attr_groups[] = {
 	&drm_conv_attr_group,
 	NULL
@@ -418,9 +426,15 @@ static const struct attribute_group *drm_fc_attr_groups[] = {
 	NULL
 };
 
+static const struct attribute_group *drm_ipu_attr_groups[] = {
+	&drm_ipu_attr_group,
+	NULL
+};
+
 static const struct attribute_group **drm_attr_groups[DRM_NUM_SUBDEV] = {
 	drm_conv_attr_groups,
 	drm_fc_attr_groups,
+	drm_ipu_attr_groups,
 };
 
 int drm_register_chrdev(struct drm_dev *drm_dev)
