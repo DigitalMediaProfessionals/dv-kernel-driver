@@ -111,11 +111,14 @@ struct dmp_dv_kcmdraw_ipu_v0 {
 	__u16 rect_width;	  	// width of rendering rectangle
 	__u16 rect_height;	  	// height of rendering rectangle
 
+	__u32 scale_width;		// must be (1/(tex_width)) in FP24 format
+	__u32 scale_height;		// must be (1/(tex_height)) in FP24 format
+
 	/* stride */
 	__s32 stride_rd;  	  	// stride for read buffer
 	__s32 stride_wr;  	  	// stride for write buffer
 	
-	struct dmp_dv_kbuf lut;		      	// look up table for texture of DMP_DV_LUT. If lut.mem == NULL, the look up table used at the last time is used.
+	__u32 lut[32];		      	// look up table for texture of DMP_DV_LUT. If lut.mem == NULL, the look up table used at the last time is used.
 	__u8 ncolor_lut;			// number of color in lut
 
 	__u8 alpha;  	      	// alpha value for blending

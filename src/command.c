@@ -33,8 +33,8 @@
 struct dmp_cmb_list_entry {
 	dma_addr_t physical;
 	void *logical;
-	size_t size;
-	size_t capacity;
+	size_t size;			// size of commands
+	size_t capacity;		// allocated DMA memory size
 	struct list_head list_node;
 };
 
@@ -644,7 +644,8 @@ static int dv_convert_fc_v0(struct device *dev, struct dmp_cmb *cmb,
 	cmd_buf[0] = 0x0011f00e; // Write 2 words to 0x11..0x12
 	cmd_buf[1] = 0x00000220 | (cmd.weight_fmt ? 0x3 : 0x2); // format
 	cmd_buf[2] = ((cmd.actfunc & 0x7) << 4); // mode
-	cmd_buf[3] = 0x0014f026; // Write 5 words to 0x14..0x18
+	cmd_buf[3] = 0x0014f026; // Write 5 words to 0x14..0x18 << ここ間違ってない?
+
 	cmd_buf[4] = cmd.input_size; // input size
 	cmd_buf[5] = cmd.output_size; // output size
 	cmd_buf[6] = output_base_addr; // output addr0
@@ -774,11 +775,153 @@ void dv_run_fc_command(struct dmp_cmb *cmb, void *bar_logical)
 	iowrite32(0x1, REG_IO_ADDR(bar_logical, 0x8));
 }
 
+static uint32_t dv_convert_ipu_v0_get_cmb_size(const struct dmp_dv_kcmdraw_ipu_v0 * cmd)
+{
+	uint32_t nreg = 12;
+	if(cmd->use_tex) {
+		nreg += 4;
+	}
+	if(cmd->use_rd) {
+		nreg += 2;
+	}
+	if(cmd->fmt_tex == 7 && cmd->use_tex != 0) {
+		nreg += cmd->ncolor_lut;
+	}
+	return sizeof(uint32_t) * 2 * nreg;
+}
 
+/// @return size of command 
+static uint32_t dv_convert_ipu_v0_fill_cmb(const struct dmp_dv_kcmdraw_ipu_v0 * cmd,
+		uint32_t * buf, size_t buflen, uint32_t tex_base_addr, uint32_t rd_base_addr,
+		uint32_t wr_base_addr)
+{
+	uint32_t j = 0;
+	uint32_t i = 0;
+	uint32_t swizzle = cmd->ridx & 0x3 << 6 | cmd->gidx & 0x3 << 4
+							| cmd->bidx & 0x3 << 2 | cmd->aidx & 0x3;
+	uint32_t tex_dim = cmd->tex_width << 16 | cmd->tex_height;
+	uint32_t fmt_and_flag = cmd->alpha & 0xff << 24 | cmd->use_alpha ? 0x10 : 0
+							| cmd->use_rd ? 0x8 : 0 | cmd->fmd_wr & 0x3 << 1 | cmd->fmt_rd & 0x1;
+	uint32_t cnv = 0;
+	switch(cmd->cnv_type) {
+	case 0;
+		cnv = (uint32_t)(cmd->cnv_param[0]) << 16 | 
+				(uint32_t)(cmd->cnv_param[1]) << 8 | 
+				(uint32_t)(cmd->cnv_param[2]);
+		break;
+	case 1;
+		cnv = 0x1 << 24;
+		break;
+	default:
+		break;
+	}
+	
+	cmd_buf[i++] = 0x0024; // Write to 0x24
+	cmd_buf[i++] = cmd->rect_width << 16 | cmd->rect_height;
+	cmd_buf[i++] = 0x00c0; // Write to 0xc0
+	cmd_buf[i++] = cmd->transpose ? 1 : 0;
+	cmd_buf[i++] = 0x00c4; // Write to 0xc4
+	cmd_buf[i++] = cmd->scale_width;
+	cmd_buf[i++] = 0x00c8; // Write to 0xc8
+	cmd_buf[i++] = cmd->scale_height;
+	cmd_buf[i++] = 0x0100; // Write to 0x100
+	cmd_buf[i++] = cmd->use_tex ? 0x2 : 0;
+	if(cmd->use_tex) {
+		cmd_buf[i++] = 0x0154; // Write to 0x154
+		cmd_buf[i++] = tex_base_addr;
+		cmd_buf[i++] = 0x0158; // Write to 0x158
+		cmd_buf[i++] = (swizzle << 16 | (uint32_t)(cmd->fmt_tex));
+		cmd_buf[i++] = 0x0148; // Write to 0x148
+		cmd_buf[i++] = tex_dim;
+		cmd_buf[i++] = 0x0160; // Write to 0x160
+		cmd_buf[i++] = tex_dim;
+	}
+	cmd_buf[i++] = 0x014c; // Write to 0x14c
+	cmd_buf[i++] = cmd->BLF ? 0x4 : 0;
+	cmd_buf[i++] = 0x015c; // Write to 0x15c
+	cmd_buf[i++] = 1; // 1 = LL, 0 = UL
+	if(cmd->use_rd) {
+		cmd_buf[i++] = 0x0280; // Write to 0x280
+		cmd_buf[i++] = rd_base_addr;
+		cmd_buf[i++] = 0x0288; // Write to 0x288
+		cmd_buf[i++] = cmd->rdStride;
+	}
+	cmd_buf[i++] = 0x0284; // Write to 0x284
+	cmd_buf[i++] = wr_base_addr;
+	cmd_buf[i++] = 0x028c; // Write to 0x28c
+	cmd_buf[i++] = cmd->wrStride;
+	cmd_buf[i++] = 0x0294; // Write to 0x294
+	cmd_buf[i++] = fmt_and_flag; // rdFmt, wrFmt, rdEn, faEn, alpha
+	cmd_buf[i++] = 0x0298; // Write to 0x298
+	cmd_buf[i++] = cnv; // conversion to fp16
+	if(cmd->fmt_tex == 7 && cmd->use_tex != 0) {
+		for(j = 0; j < cmd->ncolor_lut; j++) {
+			cmd_buf[i++] = 0x01f0; // Write to 0x01f0
+			cmd_buf[i++] = cmd->lut[j];
+		}
+	}
+	cmd_buf[i++] = 0x0; // end
+	cmd_buf[i++] = 0; // end
+	
+	return i;
+}
+
+// If already a command is converted and not executed yet, -EBUSY is returned.
 static int dv_convert_ipu_v0(struct device *dev, struct dmp_cmb *cmb,
 			    struct dmp_dv_kcmdraw __user *user_cmd, size_t size)
 {
-	//TODO: implement
+	struct dmp_cmb_list_entry *cmb_node;
+	struct dmp_dv_kcmdraw_ipu_v0 cmd;
+	size_t cmd_size;
+	uint32_t *cmd_buf;
+	uint32_t tex_base_addr = 0, tex_buf_size;
+	uint32_t rd_base_addr = 0, rd_buf_size;
+	uint32_t wr_base_addr = 0, wr_buf_size;
+	int ret;
+	
+	cmb_node = list_first_entry(&cmb->cmb_list, struct dmp_cmb_list_entry,
+				    list_node);
+	if (cmb_node.size != 0)
+		return -EBUSY
+	if (size < sizeof(struct dmp_dv_kcmdraw_ipu_v0))
+		return -EINVAL;
+	if (copy_from_user(&cmd, user_cmd, size))
+		return -EFAULT;
+
+	// prep buffer 
+	ret = get_dma_addr(dev, cmb, &cmd.wr, &tex_base_addr,
+			   &wr_buf_size);
+	if (ret)
+		return ret;
+	if(cmd.use_tex) {
+		ret = get_dma_addr(dev, cmb, &cmd.tex, &tex_base_addr,
+										       &tex_buf_size);
+		if (ret)
+			return ret;
+		cmd_size += sizeof(uint32_t) * 6;
+	}
+	if(cmd.use_rd) {
+		ret = get_dma_addr(dev, cmb, &cmd.rd, &rd_base_addr,
+				                              &rd_buf_size);
+		if (ret)
+			return ret;
+		cmd_size += sizeof(uint32_t) * 4;
+	}
+	
+	// new cmb is the size is smaller
+	cmd_size = dv_convert_ipu_v0_get_cmb_size(cmd);
+	if (cmb_node->size + cmd_size + 8 > cmb_node->capacity) {
+		cmb_node = dv_cmb_allocate(dev);
+		if (!cmb_node)
+			return -ENOMEM;
+		list_add(&cmb_node->list_node, &cmb->cmb_list);
+	}
+	cmdbuf = (uint32_t*)((uint8_t*)(cmd_node->logical) + cmd_node->size);
+	
+	cmb_node->size += dv_convert_ipu_v0_fill_cmb(&cmd, cmd_buf, 
+							cmb_node->capacity - cmb_nod->size,
+							tex_base_addr, rd_base_addr, wr_base_addr);
+	return 0;
 }
 
 int dv_convert_ipu_command(struct device *dev, struct dmp_cmb *cmb,
@@ -815,4 +958,5 @@ int dv_convert_ipu_command(struct device *dev, struct dmp_cmb *cmb,
 void dv_run_ipu_command(struct dmp_cmb *cmb, void *bar_logical)
 {
 	//TODO: implement
+	// assume cmd must be one
 }
