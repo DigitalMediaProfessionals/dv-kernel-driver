@@ -53,7 +53,9 @@
 static int irq_no[DRM_NUM_SUBDEV] = {48, 49};
 static unsigned int reg_base = 0x80000000;
 #endif
-static unsigned int reg_offset[DRM_NUM_SUBDEV] = {0x0, 0x1000, 0x2000};
+// TODO: had better to reconstruct reg_offset/reg_size/... according to device tree
+static int subdev_index[DRM_NUM_SUBDEV] = {-1, -1, -1};
+static unsigned int reg_offset[DRM_NUM_SUBDEV] = {UINT_MAX, UINT_MAX, UINT_MAX};
 static unsigned int reg_size[DRM_NUM_SUBDEV] = {0x1000, 0x1000, 0x1000};
 static int irq_addr[DRM_NUM_SUBDEV] = {0x420, 0x20, 0x20};
 static const char *subdev_name[DRM_NUM_SUBDEV] = {"conv", "fc", "ipu"};
@@ -470,42 +472,44 @@ int drm_register_chrdev(struct drm_dev *drm_dev)
 	}
 
 	for (i = 0; i < DRM_NUM_SUBDEV; i++) {
-		// Create device:
-		dev = device_create_with_groups(dddrm_class, NULL,
-			MKDEV(driver_major, i), drm_dev, drm_attr_groups[i],
-			"dv_%s", subdev_name[i]);
-		if (IS_ERR(dev)) {
-			err = PTR_ERR(dev);
-			dev_err(drm_dev->dev, "device_create fail %d\n", i);
-			goto fail_device_init;
+		if(subdev_index[i] >= 0) {
+			// Create device:
+			dev = device_create_with_groups(dddrm_class, NULL,
+					MKDEV(driver_major, i), drm_dev, drm_attr_groups[i],
+					"dv_%s", subdev_name[i]);
+			if (IS_ERR(dev)) {
+				err = PTR_ERR(dev);
+				dev_err(drm_dev->dev, "device_create fail %d\n", i);
+				goto fail_device_init;
+			}
+
+			rIRQ = drm_dev->subdev[i].irqno;
+			err = request_irq(rIRQ, handle_int, IRQF_SHARED, DRM_DEV_NAME,
+					&(drm_dev->subdev[i]));
+			if (err) {
+				device_destroy(dddrm_class, MKDEV(driver_major, i));
+				dev_err(drm_dev->dev,
+						"request_irq FAIL: IRQ=%d ERR=%d\n", rIRQ, err);
+				goto fail_device_init;
+			}
+
+			// initialize:
+			init_waitqueue_head(&(drm_dev->subdev[i].wait_queue));
+			spin_lock_init(&(drm_dev->subdev[i].int_exclusive));
+			spin_lock_init(&(drm_dev->subdev[i].wq_exclusive));
+
+			drm_dev->subdev[i].wq = alloc_ordered_workqueue(
+					"dv_wq_%s", 0, subdev_name[i]);
+			if (!drm_dev->subdev[i].wq) {
+				err = -ENOMEM;
+				device_destroy(dddrm_class, MKDEV(driver_major, i));
+				dev_err(drm_dev->dev,
+						"work queue allocation fail %d\n", i);
+				goto fail_device_init;
+			}
+
+			drm_dev->subdev[i].init_done = 1;
 		}
-
-		rIRQ = drm_dev->subdev[i].irqno;
-		err = request_irq(rIRQ, handle_int, IRQF_SHARED, DRM_DEV_NAME,
-				  &(drm_dev->subdev[i]));
-		if (err) {
-			device_destroy(dddrm_class, MKDEV(driver_major, i));
-			dev_err(drm_dev->dev,
-				"request_irq FAIL: IRQ=%d ERR=%d\n", rIRQ, err);
-			goto fail_device_init;
-		}
-
-		// initialize:
-		init_waitqueue_head(&(drm_dev->subdev[i].wait_queue));
-		spin_lock_init(&(drm_dev->subdev[i].int_exclusive));
-		spin_lock_init(&(drm_dev->subdev[i].wq_exclusive));
-
-		drm_dev->subdev[i].wq = alloc_ordered_workqueue(
-			"dv_wq_%s", 0, subdev_name[i]);
-		if (!drm_dev->subdev[i].wq) {
-			err = -ENOMEM;
-			device_destroy(dddrm_class, MKDEV(driver_major, i));
-			dev_err(drm_dev->dev,
-				"work queue allocation fail %d\n", i);
-			goto fail_device_init;
-		}
-
-		drm_dev->subdev[i].init_done = 1;
 	}
 
 	return 0;
@@ -560,6 +564,8 @@ static int drm_dev_probe(struct platform_device *pdev)
 	struct device_node *dev_node, *parent_node;
 	u32 addr_cells;
 	unsigned int reg_base, reg_index;
+	const char * sys_str = 0x00;
+	const char * _p;
 #endif
 
 	dev_dbg(&pdev->dev, "probe begin\n");
@@ -602,30 +608,51 @@ static int drm_dev_probe(struct platform_device *pdev)
 	UNIFIED_BUFFER_SIZE <<= 10;
 	of_property_read_u32(dev_node, "max-conv-size", &MAX_CONV_KERNEL_SIZE);
 	of_property_read_u32(dev_node, "max-fc-vector", &MAX_FC_VECTOR_SIZE);
+	of_property_read_string(dev_node, "system", &sys_str);
+	if(strcmp(sys_str, "CONV,FC") == 0) {
+		subdev_index[0] = 0;
+		subdev_index[1] = 1;
+	} else if(strcmp(sys_str, "CONV,FC,MX,IPU") == 0) {
+		subdev_index[0] = 0;
+		subdev_index[1] = 1;
+		subdev_index[2] = 3;
+	} else if(strcmp(sys_str, "CONV,MX,IPU") == 0) {
+		subdev_index[0] = 0;
+		subdev_index[2] = 2;
+	} else {
+		err = -EINVAL;
+		pr_err(DRM_DEV_NAME ": %s is not valid DV system.\n", sys_str);
+		goto fail_dt_system;
+	}
+	for (i = 0; i < DRM_NUM_SUBDEV; i++)
+		if(subdev_index[i] >= 0)
+			reg_offset[i] = subdev_index[i] * 0x1000;
 #endif
 
 	for (i = 0; i < DRM_NUM_SUBDEV; i++) {
+		if(subdev_index[i] >= 0){
 #ifdef USE_DEVTREE
-		drm_dev->subdev[i].irqno = of_irq_get(dev_node, i);
+			drm_dev->subdev[i].irqno = of_irq_get(dev_node, subdev_index[i]);
 #else
-		drm_dev->subdev[i].irqno = irq_no[i];
+			drm_dev->subdev[i].irqno = irq_no[i];
 #endif
 
-		drm_dev->subdev[i].bar_physical = reg_base + reg_offset[i];
-		drm_dev->subdev[i].bar_size = reg_size[i];
-		drm_dev->subdev[i].bar_logical =
-			ioremap_nocache(drm_dev->subdev[i].bar_physical,
-					drm_dev->subdev[i].bar_size);
-		if (!drm_dev->subdev[i].bar_logical) {
-			err = -EBUSY;
-			dev_err(&pdev->dev, "ioremap_nocache fail %d\n", i);
-			goto fail_get_iomap;
-		}
-		drm_dev->subdev[i].irq_addr = irq_addr[i];
+			drm_dev->subdev[i].bar_physical = reg_base + reg_offset[i];
+			drm_dev->subdev[i].bar_size = reg_size[i];
+			drm_dev->subdev[i].bar_logical =
+				ioremap_nocache(drm_dev->subdev[i].bar_physical,
+						drm_dev->subdev[i].bar_size);
+			if (!drm_dev->subdev[i].bar_logical) {
+				err = -EBUSY;
+				dev_err(&pdev->dev, "ioremap_nocache fail %d\n", i);
+				goto fail_get_iomap;
+			}
+			drm_dev->subdev[i].irq_addr = irq_addr[i];
 
-		drm_dev->subdev[i].init_done = 0;
-		drm_dev->subdev[i].cmd_id = 0;
-		drm_dev->subdev[i].hw_id = 0;
+			drm_dev->subdev[i].init_done = 0;
+			drm_dev->subdev[i].cmd_id = 0;
+			drm_dev->subdev[i].hw_id = 0;
+		}
 	}
 
 	// set firmware private attribute to conv subdev
@@ -658,6 +685,7 @@ fail_get_iomap:
 		}
 	}
 
+fail_dt_system:
 fail_dma_set_mask:
 	platform_set_drvdata(pdev, NULL);
 
