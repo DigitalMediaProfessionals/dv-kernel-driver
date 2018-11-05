@@ -55,7 +55,7 @@ static unsigned int reg_base = 0x80000000;
 #endif
 static unsigned int reg_offset[DRM_NUM_SUBDEV] = {0x0, 0x1000, 0x2000};
 static unsigned int reg_size[DRM_NUM_SUBDEV] = {0x1000, 0x1000, 0x1000};
-static int irq_addr[DRM_NUM_SUBDEV] = {0x420, 0x20};
+static int irq_addr[DRM_NUM_SUBDEV] = {0x420, 0x20, 0x20};
 static const char *subdev_name[DRM_NUM_SUBDEV] = {"conv", "fc", "ipu"};
 
 #define DEF_UNIFIED_BUFFER_SIZE_KB 640
