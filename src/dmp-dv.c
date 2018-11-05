@@ -314,6 +314,32 @@ static ssize_t max_kernel_size_show(struct device *dev,
 	return scnprintf(buf, PAGE_SIZE, "%d\n", MAX_CONV_KERNEL_SIZE);
 }
 
+static ssize_t loop_control_show(struct device *dev,
+				 struct device_attribute *attr,
+				 char *buf)
+{
+	struct drm_dev *drm_dev = dev_get_drvdata(dev);
+	unsigned int loop_control;
+
+	loop_control = ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x48));
+	return scnprintf(buf, PAGE_SIZE, "%d\n", loop_control);
+}
+
+static ssize_t loop_control_store(struct device *dev, 
+				  struct device_attribute *attr,
+				  const char *buf, size_t len)
+{
+	struct drm_dev *drm_dev = dev_get_drvdata(dev);
+	unsigned int loop_control;
+	int ret;
+
+	ret = kstrtouint(buf, 0, &loop_control);
+	if (ret < 0)
+		return ret;
+	iowrite32(loop_control, REG_IO_ADDR((&drm_dev->subdev[0]), 0x48));
+	return len;
+}
+
 static ssize_t max_fc_vector_size_show(struct device *dev,
 				    struct device_attribute *attr,
 				    char *buf)
@@ -404,6 +430,7 @@ static DEVICE_ATTR_RO(conv_freq);
 static DEVICE_ATTR_RO(conv_kick_count);
 static DEVICE_ATTR_RO(ub_size);
 static DEVICE_ATTR_RO(max_kernel_size);
+static DEVICE_ATTR_RW(loop_control);
 
 static DEVICE_ATTR_RO(fc_freq);
 static DEVICE_ATTR_RO(max_fc_vector_size);
@@ -422,6 +449,7 @@ static struct attribute *drm_conv_attrs[] = {
 	&dev_attr_svn_version.attr,
 	&dev_attr_mac_num.attr,
 	&dev_attr_max_input_size.attr,
+	&dev_attr_loop_control.attr,
 	NULL
 };
 
