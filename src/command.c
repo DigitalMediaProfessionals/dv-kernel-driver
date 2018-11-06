@@ -836,7 +836,7 @@ static uint32_t dv_convert_ipu_v0_fill_cmb(const struct dmp_dv_kcmdraw_ipu_v0 * 
 		cmd_buf[i++] = 0x0160; // Write to 0x160
 		cmd_buf[i++] = tex_dim;
 		cmd_buf[i++] = 0x014c; // Write to 0x14c
-		cmd_buf[i++] = cmd->BLF ? 0x4 : 0;
+		cmd_buf[i++] = cmd->blf ? 0x4 : 0;
 		cmd_buf[i++] = 0x015c; // Write to 0x15c
 		cmd_buf[i++] = 1; // 1 = LL, 0 = UL
 	}
