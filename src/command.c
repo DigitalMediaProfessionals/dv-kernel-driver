@@ -792,7 +792,7 @@ static uint32_t dv_convert_ipu_v0_get_cmb_size(const struct dmp_dv_kcmdraw_ipu_v
 
 /// @return size of command 
 static uint32_t dv_convert_ipu_v0_fill_cmb(const struct dmp_dv_kcmdraw_ipu_v0 * cmd,
-		uint32_t * buf, size_t buflen, uint32_t tex_base_addr, uint32_t rd_base_addr,
+		uint32_t * cmd_buf, size_t buflen, uint32_t tex_base_addr, uint32_t rd_base_addr,
 		uint32_t wr_base_addr)
 {
 	uint32_t j = 0;
@@ -800,16 +800,16 @@ static uint32_t dv_convert_ipu_v0_fill_cmb(const struct dmp_dv_kcmdraw_ipu_v0 * 
 	uint32_t swizzle = (cmd->ridx & 0x3 << 6) | (cmd->gidx & 0x3 << 4)
 							| (cmd->bidx & 0x3 << 2) | (cmd->aidx & 0x3);
 	uint32_t tex_dim = (cmd->tex_width << 16) | cmd->tex_height;
-	uint32_t fmt_and_flag = (cmd->alpha & 0xff << 24) | (cmd->use_alpha ? 0x10 : 0)
-							| (cmd->use_rd ? 0x8 : 0) | (cmd->fmd_wr & 0x3 << 1) | (cmd->fmt_rd & 0x1);
+	uint32_t fmt_and_flag = (cmd->alpha & 0xff << 24) | (cmd->use_const_alpha ? 0x10 : 0)
+							| (cmd->use_rd ? 0x8 : 0) | (cmd->fmt_wr & 0x3 << 1) | (cmd->fmt_rd & 0x1);
 	uint32_t cnv = 0;
 	switch(cmd->cnv_type) {
-	case 0;
+	case 0:
 		cnv = ((uint32_t)(cmd->cnv_param[0]) << 16) | 
 				((uint32_t)(cmd->cnv_param[1]) << 8) | 
 				(uint32_t)(cmd->cnv_param[2]);
 		break;
-	case 1;
+	case 1:
 		cnv = 0x1 << 24;
 		break;
 	default:
@@ -844,12 +844,12 @@ static uint32_t dv_convert_ipu_v0_fill_cmb(const struct dmp_dv_kcmdraw_ipu_v0 * 
 		cmd_buf[i++] = 0x0280; // Write to 0x280
 		cmd_buf[i++] = rd_base_addr;
 		cmd_buf[i++] = 0x0288; // Write to 0x288
-		cmd_buf[i++] = cmd->rdStride;
+		cmd_buf[i++] = cmd->stride_rd;
 	}
 	cmd_buf[i++] = 0x0284; // Write to 0x284
 	cmd_buf[i++] = wr_base_addr;
 	cmd_buf[i++] = 0x028c; // Write to 0x28c
-	cmd_buf[i++] = cmd->wrStride;
+	cmd_buf[i++] = cmd->stride_wr;
 	cmd_buf[i++] = 0x0294; // Write to 0x294
 	cmd_buf[i++] = fmt_and_flag; // rdFmt, wrFmt, rdEn, faEn, alpha
 	cmd_buf[i++] = 0x0298; // Write to 0x298
@@ -881,8 +881,8 @@ static int dv_convert_ipu_v0(struct device *dev, struct dmp_cmb *cmb,
 	
 	cmb_node = list_first_entry(&cmb->cmb_list, struct dmp_cmb_list_entry,
 				    list_node);
-	if (cmb_node.size != 0)
-		return -EBUSY
+	if (cmb_node->size != 0)
+		return -EBUSY;
 	if (size < sizeof(struct dmp_dv_kcmdraw_ipu_v0))
 		return -EINVAL;
 	if (copy_from_user(&cmd, user_cmd, size))
@@ -909,17 +909,17 @@ static int dv_convert_ipu_v0(struct device *dev, struct dmp_cmb *cmb,
 	}
 	
 	// new cmb is the size is smaller
-	cmd_size = dv_convert_ipu_v0_get_cmb_size(cmd);
+	cmd_size = dv_convert_ipu_v0_get_cmb_size(&cmd);
 	if (cmb_node->size + cmd_size + 8 > cmb_node->capacity) {
 		cmb_node = dv_cmb_allocate(dev);
 		if (!cmb_node)
 			return -ENOMEM;
 		list_add(&cmb_node->list_node, &cmb->cmb_list);
 	}
-	cmdbuf = (uint32_t*)((uint8_t*)(cmd_node->logical) + cmd_node->size);
+	cmd_buf = (uint32_t*)((uint8_t*)(cmb_node->logical) + cmb_node->size);
 	
 	cmb_node->size += dv_convert_ipu_v0_fill_cmb(&cmd, cmd_buf, 
-							cmb_node->capacity - cmb_nod->size,
+							cmb_node->capacity - cmb_node->size,
 							tex_base_addr, rd_base_addr, wr_base_addr);
 	return 0;
 }

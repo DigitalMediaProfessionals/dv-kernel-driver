@@ -414,7 +414,7 @@ static const struct attribute_group drm_fc_attr_group = {
 	.attrs = drm_fc_attrs,
 };
 
-static const struct attribute_group drm_fc_attr_group = {
+static const struct attribute_group drm_ipu_attr_group = {
 	.attrs = drm_ipu_attrs,
 };
 
@@ -565,7 +565,6 @@ static int drm_dev_probe(struct platform_device *pdev)
 	u32 addr_cells;
 	unsigned int reg_base, reg_index;
 	const char * sys_str = 0x00;
-	const char * _p;
 #endif
 
 	dev_dbg(&pdev->dev, "probe begin\n");
