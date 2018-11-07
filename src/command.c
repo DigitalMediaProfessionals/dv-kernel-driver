@@ -797,16 +797,16 @@ static uint32_t dv_convert_ipu_v0_fill_cmb(const struct dmp_dv_kcmdraw_ipu_v0 * 
 {
 	uint32_t j = 0;
 	uint32_t i = 0;
-	uint32_t swizzle = cmd->ridx & 0x3 << 6 | cmd->gidx & 0x3 << 4
-							| cmd->bidx & 0x3 << 2 | cmd->aidx & 0x3;
-	uint32_t tex_dim = cmd->tex_width << 16 | cmd->tex_height;
-	uint32_t fmt_and_flag = cmd->alpha & 0xff << 24 | cmd->use_alpha ? 0x10 : 0
-							| cmd->use_rd ? 0x8 : 0 | cmd->fmd_wr & 0x3 << 1 | cmd->fmt_rd & 0x1;
+	uint32_t swizzle = (cmd->ridx & 0x3 << 6) | (cmd->gidx & 0x3 << 4)
+							| (cmd->bidx & 0x3 << 2) | (cmd->aidx & 0x3);
+	uint32_t tex_dim = (cmd->tex_width << 16) | cmd->tex_height;
+	uint32_t fmt_and_flag = (cmd->alpha & 0xff << 24) | (cmd->use_alpha ? 0x10 : 0)
+							| (cmd->use_rd ? 0x8 : 0) | (cmd->fmd_wr & 0x3 << 1) | (cmd->fmt_rd & 0x1);
 	uint32_t cnv = 0;
 	switch(cmd->cnv_type) {
 	case 0;
-		cnv = (uint32_t)(cmd->cnv_param[0]) << 16 | 
-				(uint32_t)(cmd->cnv_param[1]) << 8 | 
+		cnv = ((uint32_t)(cmd->cnv_param[0]) << 16) | 
+				((uint32_t)(cmd->cnv_param[1]) << 8) | 
 				(uint32_t)(cmd->cnv_param[2]);
 		break;
 	case 1;
@@ -817,7 +817,7 @@ static uint32_t dv_convert_ipu_v0_fill_cmb(const struct dmp_dv_kcmdraw_ipu_v0 * 
 	}
 	
 	cmd_buf[i++] = 0x0024; // Write to 0x24
-	cmd_buf[i++] = cmd->rect_width << 16 | cmd->rect_height;
+	cmd_buf[i++] = (cmd->rect_width << 16) | cmd->rect_height;
 	cmd_buf[i++] = 0x00c0; // Write to 0xc0
 	cmd_buf[i++] = cmd->transpose ? 1 : 0;
 	cmd_buf[i++] = 0x00c4; // Write to 0xc4
@@ -830,7 +830,7 @@ static uint32_t dv_convert_ipu_v0_fill_cmb(const struct dmp_dv_kcmdraw_ipu_v0 * 
 		cmd_buf[i++] = 0x0154; // Write to 0x154
 		cmd_buf[i++] = tex_base_addr;
 		cmd_buf[i++] = 0x0158; // Write to 0x158
-		cmd_buf[i++] = (swizzle << 16 | (uint32_t)(cmd->fmt_tex));
+		cmd_buf[i++] = (swizzle << 16) | (uint32_t)(cmd->fmt_tex);
 		cmd_buf[i++] = 0x0148; // Write to 0x148
 		cmd_buf[i++] = tex_dim;
 		cmd_buf[i++] = 0x0160; // Write to 0x160
