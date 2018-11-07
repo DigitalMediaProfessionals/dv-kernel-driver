@@ -660,13 +660,16 @@ static int drm_dev_probe(struct platform_device *pdev)
 	drm_firmware_attr.private = &drm_dev->subdev[0];
 
 	// Set conv to command list mode
-	iowrite32(1, REG_IO_ADDR((&drm_dev->subdev[0]), 0x40C));
+	if(subdev_index[0] >= 0)
+		iowrite32(1, REG_IO_ADDR((&drm_dev->subdev[0]), 0x40C));
 
 	// Set fc to command list mode
-	iowrite32(1, REG_IO_ADDR((&drm_dev->subdev[1]), 0x28));
+	if(subdev_index[1] >= 0)
+		iowrite32(1, REG_IO_ADDR((&drm_dev->subdev[1]), 0x28));
 
 	// Set firmware to use ROM
-	iowrite32(1, REG_IO_ADDR((&drm_dev->subdev[0]), 0x44));
+	if(subdev_index[0] >= 0)
+		iowrite32(1, REG_IO_ADDR((&drm_dev->subdev[0]), 0x44));
 
 	err = drm_register_chrdev(drm_dev);
 	if (err) {
