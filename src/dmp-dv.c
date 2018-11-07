@@ -442,6 +442,7 @@ static const struct attribute_group **drm_attr_groups[DRM_NUM_SUBDEV] = {
 int drm_register_chrdev(struct drm_dev *drm_dev)
 {
 	int err = 0, rIRQ = 0, i = 0;
+	int subd_idx;
 	struct device *dev;
 	unsigned int driver_major;
 
@@ -472,43 +473,44 @@ int drm_register_chrdev(struct drm_dev *drm_dev)
 	}
 
 	for (i = 0; i < DRM_NUM_SUBDEV; i++) {
-		if(subdev_index[i] >= 0) {
+		subd_idx = subdev_index[i];
+		if(subd_idx >= 0) {
 			// Create device:
 			dev = device_create_with_groups(dddrm_class, NULL,
-					MKDEV(driver_major, i), drm_dev, drm_attr_groups[i],
-					"dv_%s", subdev_name[i]);
+					MKDEV(driver_major, subd_idx), drm_dev, drm_attr_groups[subd_idx],
+					"dv_%s", subdev_name[subd_idx]);
 			if (IS_ERR(dev)) {
 				err = PTR_ERR(dev);
 				dev_err(drm_dev->dev, "device_create fail %d\n", i);
 				goto fail_device_init;
 			}
 
-			rIRQ = drm_dev->subdev[i].irqno;
+			rIRQ = drm_dev->subdev[subd_idx].irqno;
 			err = request_irq(rIRQ, handle_int, IRQF_SHARED, DRM_DEV_NAME,
-					&(drm_dev->subdev[i]));
+					&(drm_dev->subdev[subd_idx]));
 			if (err) {
-				device_destroy(dddrm_class, MKDEV(driver_major, i));
+				device_destroy(dddrm_class, MKDEV(driver_major, subd_idx));
 				dev_err(drm_dev->dev,
 						"request_irq FAIL: IRQ=%d ERR=%d\n", rIRQ, err);
 				goto fail_device_init;
 			}
 
 			// initialize:
-			init_waitqueue_head(&(drm_dev->subdev[i].wait_queue));
-			spin_lock_init(&(drm_dev->subdev[i].int_exclusive));
-			spin_lock_init(&(drm_dev->subdev[i].wq_exclusive));
+			init_waitqueue_head(&(drm_dev->subdev[subd_idx].wait_queue));
+			spin_lock_init(&(drm_dev->subdev[subd_idx].int_exclusive));
+			spin_lock_init(&(drm_dev->subdev[subd_idx].wq_exclusive));
 
-			drm_dev->subdev[i].wq = alloc_ordered_workqueue(
-					"dv_wq_%s", 0, subdev_name[i]);
-			if (!drm_dev->subdev[i].wq) {
+			drm_dev->subdev[subd_idx].wq = alloc_ordered_workqueue(
+					"dv_wq_%s", 0, subdev_name[subd_idx]);
+			if (!drm_dev->subdev[subd_idx].wq) {
 				err = -ENOMEM;
-				device_destroy(dddrm_class, MKDEV(driver_major, i));
+				device_destroy(dddrm_class, MKDEV(driver_major, subd_idx));
 				dev_err(drm_dev->dev,
 						"work queue allocation fail %d\n", i);
 				goto fail_device_init;
 			}
 
-			drm_dev->subdev[i].init_done = 1;
+			drm_dev->subdev[subd_idx].init_done = 1;
 		}
 	}
 
