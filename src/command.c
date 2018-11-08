@@ -797,11 +797,11 @@ static uint32_t dv_convert_ipu_v0_fill_cmb(const struct dmp_dv_kcmdraw_ipu_v0 * 
 {
 	uint32_t j = 0;
 	uint32_t i = 0;
-	uint32_t swizzle = (cmd->ridx & 0x3 << 6) | (cmd->gidx & 0x3 << 4)
-							| (cmd->bidx & 0x3 << 2) | (cmd->aidx & 0x3);
+	uint32_t swizzle = ((uint32_t)(cmd->ridx & 0x3) << 6) | ((uint32_t)(cmd->gidx & 0x3) << 4)
+							| ((uint32_t)(cmd->bidx & 0x3) << 2) | (uint32_t)(cmd->aidx & 0x3);
 	uint32_t tex_dim = (cmd->tex_width << 16) | cmd->tex_height;
-	uint32_t fmt_and_flag = (cmd->alpha & 0xff << 24) | (cmd->use_const_alpha ? 0x10 : 0)
-							| (cmd->use_rd ? 0x8 : 0) | (cmd->fmt_wr & 0x3 << 1) | (cmd->fmt_rd & 0x1);
+	uint32_t fmt_and_flag = (((uint32_t)cmd->alpha & 0xff) << 24) | ((uint32_t)cmd->use_const_alpha ? 0x10 : 0)
+							| ((uint32_t)cmd->use_rd ? 0x8 : 0) | (((uint32_t)cmd->fmt_wr & 0x3) << 1) | ((uint32_t)cmd->fmt_rd & 0x1);
 	uint32_t cnv = 0;
 	switch(cmd->cnv_type) {
 	case 0:
@@ -821,11 +821,11 @@ static uint32_t dv_convert_ipu_v0_fill_cmb(const struct dmp_dv_kcmdraw_ipu_v0 * 
 	cmd_buf[i++] = 0x00c0; // Write to 0xc0
 	cmd_buf[i++] = cmd->transpose ? 1 : 0;
 	cmd_buf[i++] = 0x00c4; // Write to 0xc4
-	cmd_buf[i++] = cmd->scale_width;
-	cmd_buf[i++] = 0x00c8; // Write to 0xc8
 	cmd_buf[i++] = cmd->scale_height;
+	cmd_buf[i++] = 0x00c8; // Write to 0xc8
+	cmd_buf[i++] = cmd->scale_width;
 	cmd_buf[i++] = 0x0100; // Write to 0x100
-	cmd_buf[i++] = cmd->use_tex ? 0x2 : 0;
+	cmd_buf[i++] = cmd->use_tex ? 0x00ff0002 : 0;
 	if(cmd->use_tex) {
 		cmd_buf[i++] = 0x0154; // Write to 0x154
 		cmd_buf[i++] = tex_base_addr;
@@ -836,7 +836,7 @@ static uint32_t dv_convert_ipu_v0_fill_cmb(const struct dmp_dv_kcmdraw_ipu_v0 * 
 		cmd_buf[i++] = 0x0160; // Write to 0x160
 		cmd_buf[i++] = tex_dim;
 		cmd_buf[i++] = 0x014c; // Write to 0x14c
-		cmd_buf[i++] = cmd->blf ? 0x4 : 0;
+		cmd_buf[i++] = cmd->blf ? 7 : 1;
 		cmd_buf[i++] = 0x015c; // Write to 0x15c
 		cmd_buf[i++] = 1; // 1 = LL, 0 = UL
 	}
@@ -889,7 +889,7 @@ static int dv_convert_ipu_v0(struct device *dev, struct dmp_cmb *cmb,
 		return -EFAULT;
 
 	// prep buffer 
-	ret = get_dma_addr(dev, cmb, &cmd.wr, &tex_base_addr,
+	ret = get_dma_addr(dev, cmb, &cmd.wr, &wr_base_addr,
 			   &wr_buf_size);
 	if (ret)
 		return ret;
