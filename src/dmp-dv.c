@@ -53,8 +53,6 @@
 static int irq_no[DRM_NUM_SUBDEV] = {48, 49};
 static unsigned int reg_base = 0x80000000;
 #endif
-// TODO: had better to reconstruct reg_offset/reg_size/... according to device tree
-static int subdev_index[DRM_NUM_SUBDEV] = {-1, -1, -1};
 static unsigned int reg_offset[DRM_NUM_SUBDEV] = {UINT_MAX, UINT_MAX, UINT_MAX};
 static unsigned int reg_size[DRM_NUM_SUBDEV] = {0x1000, 0x1000, 0x1000};
 static int irq_addr[DRM_NUM_SUBDEV] = {0x420, 0x20, 0x20};
@@ -472,7 +470,7 @@ int drm_register_chrdev(struct drm_dev *drm_dev)
 	}
 
 	for (i = 0; i < DRM_NUM_SUBDEV; i++) {
-		if(subdev_index[i] >= 0) {
+		if(drm_dev->subdev[i].bar_logical) {
 			// Create device:
 			dev = device_create_with_groups(dddrm_class, NULL,
 					MKDEV(driver_major, i), drm_dev, drm_attr_groups[i],
@@ -565,6 +563,8 @@ static int drm_dev_probe(struct platform_device *pdev)
 	u32 addr_cells;
 	unsigned int reg_base, reg_index;
 	const char * sys_str = 0x00;
+	int subdev_phys_idx[DRM_NUM_SUBDEV] = {-1, -1, -1};
+	int ret = 0;
 #endif
 
 	dev_dbg(&pdev->dev, "probe begin\n");
@@ -607,31 +607,31 @@ static int drm_dev_probe(struct platform_device *pdev)
 	UNIFIED_BUFFER_SIZE <<= 10;
 	of_property_read_u32(dev_node, "max-conv-size", &MAX_CONV_KERNEL_SIZE);
 	of_property_read_u32(dev_node, "max-fc-vector", &MAX_FC_VECTOR_SIZE);
-	of_property_read_string(dev_node, "system", &sys_str);
-	if(strcmp(sys_str, "CONV,FC") == 0) {
-		subdev_index[0] = 0;
-		subdev_index[1] = 1;
+	ret = of_property_read_string(dev_node, "system", &sys_str);
+	if(ret == -EINVAL /* property does not exist */|| strcmp(sys_str, "CONV,FC") == 0) {
+		subdev_phys_idx[0] = 0;
+		subdev_phys_idx[1] = 1;
 	} else if(strcmp(sys_str, "CONV,FC,MX,IPU") == 0) {
-		subdev_index[0] = 0;
-		subdev_index[1] = 1;
-		subdev_index[2] = 3;
+		subdev_phys_idx[0] = 0;
+		subdev_phys_idx[1] = 1;
+		subdev_phys_idx[2] = 3;
 	} else if(strcmp(sys_str, "CONV,MX,IPU") == 0) {
-		subdev_index[0] = 0;
-		subdev_index[2] = 2;
+		subdev_phys_idx[0] = 0;
+		subdev_phys_idx[2] = 2;
 	} else {
 		err = -EINVAL;
 		pr_err(DRM_DEV_NAME ": %s is not valid DV system.\n", sys_str);
 		goto fail_dt_system;
 	}
 	for (i = 0; i < DRM_NUM_SUBDEV; i++)
-		if(subdev_index[i] >= 0)
-			reg_offset[i] = subdev_index[i] * 0x1000;
+		if(subdev_phys_idx[i] >= 0)
+			reg_offset[i] = subdev_phys_idx[i] * 0x1000;  // TODO: use flexible reg_size
 #endif
 
 	for (i = 0; i < DRM_NUM_SUBDEV; i++) {
-		if(subdev_index[i] >= 0){
+		if(subdev_phys_idx[i] >= 0){
 #ifdef USE_DEVTREE
-			drm_dev->subdev[i].irqno = of_irq_get(dev_node, subdev_index[i]);
+			drm_dev->subdev[i].irqno = of_irq_get(dev_node, subdev_phys_idx[i]);
 #else
 			drm_dev->subdev[i].irqno = irq_no[i];
 #endif
@@ -658,15 +658,15 @@ static int drm_dev_probe(struct platform_device *pdev)
 	drm_firmware_attr.private = &drm_dev->subdev[0];
 
 	// Set conv to command list mode
-	if(subdev_index[0] >= 0)
+	if(subdev_phys_idx[0] >= 0)
 		iowrite32(1, REG_IO_ADDR((&drm_dev->subdev[0]), 0x40C));
 
 	// Set fc to command list mode
-	if(subdev_index[1] >= 0)
+	if(subdev_phys_idx[1] >= 0)
 		iowrite32(1, REG_IO_ADDR((&drm_dev->subdev[1]), 0x28));
 
 	// Set firmware to use ROM
-	if(subdev_index[0] >= 0)
+	if(subdev_phys_idx[0] >= 0)
 		iowrite32(1, REG_IO_ADDR((&drm_dev->subdev[0]), 0x44));
 
 	err = drm_register_chrdev(drm_dev);
