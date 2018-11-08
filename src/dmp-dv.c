@@ -292,7 +292,7 @@ static ssize_t conv_kick_count_show(struct device *dev,
 				    char *buf)
 {
 	struct drm_dev *drm_dev = dev_get_drvdata(dev);
-	int kick_count = ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x0100));
+	int kick_count = ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x100));
 	return scnprintf(buf, PAGE_SIZE, "%d\n", kick_count);
 }
 
@@ -300,6 +300,10 @@ static ssize_t ub_size_show(struct device *dev,
 			    struct device_attribute *attr,
 			    char *buf)
 {
+	struct drm_dev *drm_dev = dev_get_drvdata(dev);
+	int param = ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x148));
+	if (param != 0)
+		return scnprintf(buf, PAGE_SIZE, "%d\n", param << 10);
 	return scnprintf(buf, PAGE_SIZE, "%d\n", UNIFIED_BUFFER_SIZE);
 }
 
@@ -360,6 +364,42 @@ static ssize_t drm_firmware_write(struct file *filp, struct kobject *kobj,
 	return count;
 }
 
+static ssize_t hw_version_show(struct device *dev,
+			       struct device_attribute *attr,
+			       char *buf)
+{
+	struct drm_dev *drm_dev = dev_get_drvdata(dev);
+	int version = ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x140));
+	return scnprintf(buf, PAGE_SIZE, "%04x\n", version & 0xffff);
+}
+
+static ssize_t svn_version_show(struct device *dev,
+			        struct device_attribute *attr,
+			        char *buf)
+{
+	struct drm_dev *drm_dev = dev_get_drvdata(dev);
+	int version = ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x144));
+	return scnprintf(buf, PAGE_SIZE, "%d\n", version);
+}
+
+static ssize_t mac_num_show(struct device *dev,
+			    struct device_attribute *attr,
+			    char *buf)
+{
+	struct drm_dev *drm_dev = dev_get_drvdata(dev);
+	int param = ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x14C));
+	return scnprintf(buf, PAGE_SIZE, "%d\n", param);
+}
+
+static ssize_t max_input_size_show(struct device *dev,
+				   struct device_attribute *attr,
+				   char *buf)
+{
+	struct drm_dev *drm_dev = dev_get_drvdata(dev);
+	int param = ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x150));
+	return scnprintf(buf, PAGE_SIZE, "%d\n", param);
+}
+
 static DEVICE_ATTR_RO(conv_freq);
 static DEVICE_ATTR_RO(conv_kick_count);
 static DEVICE_ATTR_RO(ub_size);
@@ -368,11 +408,20 @@ static DEVICE_ATTR_RO(max_kernel_size);
 static DEVICE_ATTR_RO(fc_freq);
 static DEVICE_ATTR_RO(max_fc_vector_size);
 
+static DEVICE_ATTR_RO(hw_version);
+static DEVICE_ATTR_RO(svn_version);
+static DEVICE_ATTR_RO(mac_num);
+static DEVICE_ATTR_RO(max_input_size);
+
 static struct attribute *drm_conv_attrs[] = {
 	&dev_attr_conv_freq.attr,
 	&dev_attr_conv_kick_count.attr,
 	&dev_attr_ub_size.attr,
 	&dev_attr_max_kernel_size.attr,
+	&dev_attr_hw_version.attr,
+	&dev_attr_svn_version.attr,
+	&dev_attr_mac_num.attr,
+	&dev_attr_max_input_size.attr,
 	NULL
 };
 
