@@ -644,8 +644,7 @@ static int dv_convert_fc_v0(struct device *dev, struct dmp_cmb *cmb,
 	cmd_buf[0] = 0x0011f00e; // Write 2 words to 0x11..0x12
 	cmd_buf[1] = 0x00000220 | (cmd.weight_fmt ? 0x3 : 0x2); // format
 	cmd_buf[2] = ((cmd.actfunc & 0x7) << 4); // mode
-	cmd_buf[3] = 0x0014f026; // Write 5 words to 0x14..0x18 << ここ間違ってない?
-
+	cmd_buf[3] = 0x0014f026; // Write 5 words to 0x14..0x18
 	cmd_buf[4] = cmd.input_size; // input size
 	cmd_buf[5] = cmd.output_size; // output size
 	cmd_buf[6] = output_base_addr; // output addr0
@@ -775,7 +774,7 @@ void dv_run_fc_command(struct dmp_cmb *cmb, void *bar_logical)
 	iowrite32(0x1, REG_IO_ADDR(bar_logical, 0x8));
 }
 
-static uint32_t dv_convert_ipu_v0_get_cmb_size(const struct dmp_dv_kcmdraw_ipu_v0 * cmd)
+static uint32_t dv_convert_ipu_v0_get_cmb_size(const struct dmp_dv_kcmdraw_ipu_v0 *cmd)
 {
 	uint32_t nreg = 10;
 	if(cmd->use_tex) {
@@ -791,8 +790,8 @@ static uint32_t dv_convert_ipu_v0_get_cmb_size(const struct dmp_dv_kcmdraw_ipu_v
 }
 
 /// @return size of command 
-static uint32_t dv_convert_ipu_v0_fill_cmb(const struct dmp_dv_kcmdraw_ipu_v0 * cmd,
-		uint32_t * cmd_buf, size_t buflen, uint32_t tex_base_addr, uint32_t rd_base_addr,
+static uint32_t dv_convert_ipu_v0_fill_cmb(const struct dmp_dv_kcmdraw_ipu_v0 *cmd,
+		uint32_t *cmd_buf, size_t buflen, uint32_t tex_base_addr, uint32_t rd_base_addr,
 		uint32_t wr_base_addr)
 {
 	uint32_t j = 0;
