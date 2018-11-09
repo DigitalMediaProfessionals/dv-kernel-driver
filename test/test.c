@@ -8,7 +8,6 @@
 #include "dmp-dv.h"
 #include "dmp_dv_cmdraw_v0.h"
 #include "ion.h"
-#include "common.h"
 
 #define CMD_SIZE(N) \
   sizeof(dmp_dv_kcmdraw_conv_v0) - (32 - N) * sizeof(dmp_dv_kcmdraw_conv_v0_run)
@@ -124,6 +123,17 @@ dmp_dv_kcmdraw_fc_v0 cmd3 = {
     .actfunc = 0,
     .actfunc_param = 0,
 };
+
+static int allocate_ion_buf(int fd, uint32_t mask, size_t size) {
+  struct ion_allocation_data ion_alloc;
+
+  memset(&ion_alloc, 0, sizeof(ion_alloc));
+  ion_alloc.len = size;
+  ion_alloc.heap_id_mask = mask;
+  ioctl(fd, ION_IOC_ALLOC, &ion_alloc);
+
+  return ion_alloc.fd;
+}
 
 int main(void) {
   int i, ret, kick_count = 0;
