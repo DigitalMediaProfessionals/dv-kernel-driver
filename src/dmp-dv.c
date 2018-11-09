@@ -384,10 +384,6 @@ static struct attribute *drm_fc_attrs[] = {
 	NULL
 };
 
-static struct attribute *drm_ipu_attrs[] = {
-	NULL
-};
-
 static struct bin_attribute drm_firmware_attr = {
 	.attr =
 		{
@@ -412,10 +408,6 @@ static const struct attribute_group drm_fc_attr_group = {
 	.attrs = drm_fc_attrs,
 };
 
-static const struct attribute_group drm_ipu_attr_group = {
-	.attrs = drm_ipu_attrs,
-};
-
 static const struct attribute_group *drm_conv_attr_groups[] = {
 	&drm_conv_attr_group,
 	NULL
@@ -427,7 +419,6 @@ static const struct attribute_group *drm_fc_attr_groups[] = {
 };
 
 static const struct attribute_group *drm_ipu_attr_groups[] = {
-	&drm_ipu_attr_group,
 	NULL
 };
 
