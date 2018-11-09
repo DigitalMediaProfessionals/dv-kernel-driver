@@ -774,7 +774,7 @@ void dv_run_fc_command(struct dmp_cmb *cmb, void *bar_logical)
 	iowrite32(0x1, REG_IO_ADDR(bar_logical, 0x8));
 }
 
-static uint32_t dv_convert_ipu_v0_get_cmb_size(const struct dmp_dv_kcmdraw_ipu_v0 *cmd)
+static uint32_t dv_ipu_v0_get_cmb_size(const struct dmp_dv_kcmdraw_ipu_v0 *cmd)
 {
 	uint32_t nreg = 10;
 	if(cmd->use_tex) {
@@ -790,23 +790,32 @@ static uint32_t dv_convert_ipu_v0_get_cmb_size(const struct dmp_dv_kcmdraw_ipu_v
 }
 
 /// @return size of command 
-static uint32_t dv_convert_ipu_v0_fill_cmb(const struct dmp_dv_kcmdraw_ipu_v0 *cmd,
-		uint32_t *cmd_buf, size_t buflen, uint32_t tex_base_addr, uint32_t rd_base_addr,
+static uint32_t dv_convert_ipu_v0_fill_cmb(
+		const struct dmp_dv_kcmdraw_ipu_v0 *cmd, 
+		uint32_t *cmd_buf,
+		size_t	 buflen, 
+		uint32_t tex_base_addr,
+		uint32_t rd_base_addr, 
 		uint32_t wr_base_addr)
 {
 	uint32_t j = 0;
 	uint32_t i = 0;
-	uint32_t swizzle = ((uint32_t)(cmd->ridx & 0x3) << 6) | ((uint32_t)(cmd->gidx & 0x3) << 4)
-							| ((uint32_t)(cmd->bidx & 0x3) << 2) | (uint32_t)(cmd->aidx & 0x3);
 	uint32_t tex_dim = (cmd->tex_width << 16) | cmd->tex_height;
-	uint32_t fmt_and_flag = (((uint32_t)cmd->alpha & 0xff) << 24) | ((uint32_t)cmd->use_const_alpha ? 0x10 : 0)
-							| ((uint32_t)cmd->use_rd ? 0x8 : 0) | (((uint32_t)cmd->fmt_wr & 0x3) << 1) | ((uint32_t)cmd->fmt_rd & 0x1);
+	uint32_t swizzle = ((uint32_t)(cmd->ridx & 0x3) << 6) 
+				| ((uint32_t)(cmd->gidx & 0x3) << 4)
+				| ((uint32_t)(cmd->bidx & 0x3) << 2) 
+				| (uint32_t)(cmd->aidx & 0x3);
+	uint32_t fmt_and_flag = (((uint32_t)cmd->alpha & 0xff) << 24) 
+				| ((uint32_t)cmd->use_const_alpha ? 0x10 : 0)
+				| ((uint32_t)cmd->use_rd ? 0x8 : 0) 
+				| (((uint32_t)cmd->fmt_wr & 0x3) << 1) 
+				| ((uint32_t)cmd->fmt_rd & 0x1);
 	uint32_t cnv = 0;
 	switch(cmd->cnv_type) {
 	case 0:
-		cnv = ((uint32_t)(cmd->cnv_param[0]) << 16) | 
-				((uint32_t)(cmd->cnv_param[1]) << 8) | 
-				(uint32_t)(cmd->cnv_param[2]);
+		cnv = ((uint32_t)(cmd->cnv_param[0]) << 16) 
+			| ((uint32_t)(cmd->cnv_param[1]) << 8) 
+			| (uint32_t)(cmd->cnv_param[2]);
 		break;
 	case 1:
 		cnv = 0x1 << 24;
@@ -878,8 +887,7 @@ static int dv_convert_ipu_v0(struct device *dev, struct dmp_cmb *cmb,
 	uint32_t wr_base_addr = 0, wr_buf_size;
 	int ret;
 	
-	cmb_node = list_first_entry(&cmb->cmb_list, struct dmp_cmb_list_entry,
-				    list_node);
+	cmb_node = list_first_entry(&cmb->cmb_list, struct dmp_cmb_list_entry, list_node);
 	if (cmb_node->size != 0)
 		return -EBUSY;
 	if (size < sizeof(struct dmp_dv_kcmdraw_ipu_v0))
@@ -893,22 +901,20 @@ static int dv_convert_ipu_v0(struct device *dev, struct dmp_cmb *cmb,
 	if (ret)
 		return ret;
 	if(cmd.use_tex) {
-		ret = get_dma_addr(dev, cmb, &cmd.tex, &tex_base_addr,
-										       &tex_buf_size);
+		ret = get_dma_addr(dev, cmb, &cmd.tex, &tex_base_addr, &tex_buf_size);
 		if (ret)
 			return ret;
 		cmd_size += sizeof(uint32_t) * 6;
 	}
 	if(cmd.use_rd) {
-		ret = get_dma_addr(dev, cmb, &cmd.rd, &rd_base_addr,
-				                              &rd_buf_size);
+		ret = get_dma_addr(dev, cmb, &cmd.rd, &rd_base_addr, &rd_buf_size);
 		if (ret)
 			return ret;
 		cmd_size += sizeof(uint32_t) * 4;
 	}
 	
 	// new cmb is the size is smaller
-	cmd_size = dv_convert_ipu_v0_get_cmb_size(&cmd);
+	cmd_size = dv_ipu_v0_get_cmb_size(&cmd);
 	if (cmb_node->size + cmd_size + 8 > cmb_node->capacity) {
 		cmb_node = dv_cmb_allocate(dev);
 		if (!cmb_node)
@@ -918,8 +924,8 @@ static int dv_convert_ipu_v0(struct device *dev, struct dmp_cmb *cmb,
 	cmd_buf = (uint32_t*)((uint8_t*)(cmb_node->logical) + cmb_node->size);
 	
 	cmb_node->size += dv_convert_ipu_v0_fill_cmb(&cmd, cmd_buf, 
-							cmb_node->capacity - cmb_node->size,
-							tex_base_addr, rd_base_addr, wr_base_addr);
+				cmb_node->capacity - cmb_node->size,
+				tex_base_addr, rd_base_addr, wr_base_addr);
 	return 0;
 }
 
@@ -961,8 +967,7 @@ void dv_run_ipu_command(struct dmp_cmb *cmb, void *bar_logical)
 	uint32_t offset;
 	uint32_t val;
 
-	cmb_node = list_first_entry(&cmb->cmb_list, 
-								struct dmp_cmb_list_entry, list_node);
+	cmb_node = list_first_entry(&cmb->cmb_list, struct dmp_cmb_list_entry, list_node);
 	cmd = (uint32_t *)(cmb_node->logical);
 	while(*cmd) {
 		offset = *cmd;

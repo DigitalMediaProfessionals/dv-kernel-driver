@@ -608,7 +608,8 @@ static int drm_dev_probe(struct platform_device *pdev)
 	of_property_read_u32(dev_node, "max-conv-size", &MAX_CONV_KERNEL_SIZE);
 	of_property_read_u32(dev_node, "max-fc-vector", &MAX_FC_VECTOR_SIZE);
 	ret = of_property_read_string(dev_node, "system", &sys_str);
-	if(ret == -EINVAL /* property does not exist */|| strcmp(sys_str, "CONV,FC") == 0) {
+	if(ret == -EINVAL /* property does not exist */
+		|| strcmp(sys_str, "CONV,FC") == 0) {
 		subdev_phys_idx[0] = 0;
 		subdev_phys_idx[1] = 1;
 	} else if(strcmp(sys_str, "CONV,FC,MX,IPU") == 0) {
