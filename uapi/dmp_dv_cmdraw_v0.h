@@ -104,9 +104,10 @@ struct dmp_dv_kcmdraw_ipu_v0 {
 	__u8 fmt_tex;  	    	// format of texture buffer. This must be DMP_DV_RGBA8888, DMP_DV_RGB888 or DMP_DV_LUT.
 	__u8 fmt_rd;   	    	// format of read buffer. This must be DMP_DV_RGBA8888 or DMP_DV_RGB888.
 	__u8 fmt_wr;   	    	// format of write buffer. This must be DMP_DV_RGBA8888, DMP_DV_RGB888 or DMP_DV_RGBFP16.
+	__u8 rsvd[1];        	// padding to 16-bit size
 
 	/* dimension */
-	__u16 tex_width;	    	// width of texture
+	__u16 tex_width;	    // width of texture
 	__u16 tex_height;	  	// height of texture
 	__u16 rect_width;	  	// width of rendering rectangle
 	__u16 rect_height;	  	// height of rendering rectangle
@@ -118,8 +119,8 @@ struct dmp_dv_kcmdraw_ipu_v0 {
 	__s32 stride_rd;  	  	// stride for read buffer
 	__s32 stride_wr;  	  	// stride for write buffer
 	
-	__u32 lut[32];		      	// look up table for texture of DMP_DV_LUT. If lut.mem == NULL, the look up table used at the last time is used.
-	__u8 ncolor_lut;			// number of color in lut
+	__u32 lut[32];		    // look up table for texture of DMP_DV_LUT. If lut.mem == NULL, the look up table used at the last time is used.
+	__u8 ncolor_lut;		// number of color in lut
 
 	__u8 alpha;  	      	// alpha value for blending
 
@@ -148,6 +149,7 @@ struct dmp_dv_kcmdraw_ipu_v0 {
 	 */
 	__u8 cnv_type;       	// conversion type
 	__u8 cnv_param[3];   	// conversion parameter
+	__u8 rsvd[5];			// padding to 64-bit size
 };
 
 #endif  // _UAPI_LINUX_DMP_DV_CMDRAW_V0_H
