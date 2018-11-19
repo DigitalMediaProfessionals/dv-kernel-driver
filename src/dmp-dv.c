@@ -428,6 +428,33 @@ static ssize_t max_input_size_show(struct device *dev,
 	return scnprintf(buf, PAGE_SIZE, "%d\n", param);
 }
 
+static ssize_t input_bytes_show(struct device *dev,
+				struct device_attribute *attr,
+				char *buf)
+{
+	struct drm_dev *drm_dev = dev_get_drvdata(dev);
+	unsigned long long param = ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x180));
+	return scnprintf(buf, PAGE_SIZE, "%llu\n", param << 7);
+}
+
+static ssize_t output_bytes_show(struct device *dev,
+				 struct device_attribute *attr,
+				 char *buf)
+{
+	struct drm_dev *drm_dev = dev_get_drvdata(dev);
+	unsigned long long param = ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x184));
+	return scnprintf(buf, PAGE_SIZE, "%llu\n", param << 7);
+}
+
+static ssize_t weights_bytes_show(struct device *dev,
+				  struct device_attribute *attr,
+				  char *buf)
+{
+	struct drm_dev *drm_dev = dev_get_drvdata(dev);
+	unsigned long long param = ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x188));
+	return scnprintf(buf, PAGE_SIZE, "%llu\n", param << 7);
+}
+
 static DEVICE_ATTR_RO(conv_freq);
 static DEVICE_ATTR_RO(conv_kick_count);
 static DEVICE_ATTR_RO(ub_size);
@@ -442,6 +469,10 @@ static DEVICE_ATTR_RO(svn_version);
 static DEVICE_ATTR_RO(mac_num);
 static DEVICE_ATTR_RO(max_input_size);
 
+static DEVICE_ATTR_RO(input_bytes);
+static DEVICE_ATTR_RO(output_bytes);
+static DEVICE_ATTR_RO(weights_bytes);
+
 static struct attribute *drm_conv_attrs[] = {
 	&dev_attr_conv_freq.attr,
 	&dev_attr_conv_kick_count.attr,
@@ -452,6 +483,9 @@ static struct attribute *drm_conv_attrs[] = {
 	&dev_attr_mac_num.attr,
 	&dev_attr_max_input_size.attr,
 	&dev_attr_loop_control.attr,
+	&dev_attr_input_bytes.attr,
+	&dev_attr_output_bytes.attr,
+	&dev_attr_weights_bytes.attr,
 	NULL
 };
 
