@@ -434,7 +434,7 @@ static ssize_t input_bytes_show(struct device *dev,
 {
 	struct drm_dev *drm_dev = dev_get_drvdata(dev);
 	unsigned long long param = ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x180));
-	return scnprintf(buf, PAGE_SIZE, "%llu\n", param << 7);
+	return scnprintf(buf, PAGE_SIZE, "%llu\n", param << 5);
 }
 
 static ssize_t output_bytes_show(struct device *dev,
@@ -443,7 +443,7 @@ static ssize_t output_bytes_show(struct device *dev,
 {
 	struct drm_dev *drm_dev = dev_get_drvdata(dev);
 	unsigned long long param = ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x184));
-	return scnprintf(buf, PAGE_SIZE, "%llu\n", param << 7);
+	return scnprintf(buf, PAGE_SIZE, "%llu\n", param << 5);
 }
 
 static ssize_t weights_bytes_show(struct device *dev,
@@ -452,7 +452,7 @@ static ssize_t weights_bytes_show(struct device *dev,
 {
 	struct drm_dev *drm_dev = dev_get_drvdata(dev);
 	unsigned long long param = ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x188));
-	return scnprintf(buf, PAGE_SIZE, "%llu\n", param << 7);
+	return scnprintf(buf, PAGE_SIZE, "%llu\n", param << 5);
 }
 
 static DEVICE_ATTR_RO(conv_freq);
