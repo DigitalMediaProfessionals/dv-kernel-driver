@@ -158,11 +158,11 @@ struct dmp_dv_kcmdraw_maximizer_v0 {
 	struct dmp_dv_kbuf input_buf;	// input buffer
 	struct dmp_dv_kbuf output_buf;	// output buffer
 
-	uint16_t width;		// width of input
-	uint16_t height;	// height of input
-	uint16_t nclass;	// # of classes
+	__u16 width;		// width of input
+	__u16 height;	// height of input
+	__u16 nclass;	// # of classes
 
-	uint16_t rsvd[1];	// padding to 64-bit size
+	__u16 rsvd[1];	// padding to 64-bit size
 }
 
 #endif  // _UAPI_LINUX_DMP_DV_CMDRAW_V0_H
