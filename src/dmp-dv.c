@@ -302,10 +302,6 @@ static ssize_t ub_size_show(struct device *dev,
 			    struct device_attribute *attr,
 			    char *buf)
 {
-	struct drm_dev *drm_dev = dev_get_drvdata(dev);
-	int param = ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x148));
-	if (param != 0)
-		return scnprintf(buf, PAGE_SIZE, "%d\n", param << 10);
 	return scnprintf(buf, PAGE_SIZE, "%d\n", UNIFIED_BUFFER_SIZE);
 }
 
@@ -658,7 +654,7 @@ int drm_unregister_chrdev(struct drm_dev *drm_dev)
 
 static int drm_dev_probe(struct platform_device *pdev)
 {
-	int i = 0, err = 0;
+	int i = 0, err = 0, ubuf_size = 0;
 	struct drm_dev *drm_dev;
 #ifdef USE_DEVTREE
 	struct device_node *dev_node, *parent_node;
@@ -702,23 +698,18 @@ static int drm_dev_probe(struct platform_device *pdev)
 	// Try to read device dependent properties
 	UNIFIED_BUFFER_SIZE = 0;
 	of_property_read_u32(dev_node, "ubuf-size", &UNIFIED_BUFFER_SIZE);
-	if ((!UNIFIED_BUFFER_SIZE) || (UNIFIED_BUFFER_SIZE > 2097151)) {  // in KBytes
-		pr_warning(DRM_DEV_NAME ": Detected suspicious ubuf-size value %u KB in the device tree, using default %u KB instead",
-			   UNIFIED_BUFFER_SIZE, DEF_UNIFIED_BUFFER_SIZE_KB);
-	}
-	UNIFIED_BUFFER_SIZE <<= 10;
 	of_property_read_u32(dev_node, "max-conv-size", &MAX_CONV_KERNEL_SIZE);
 	of_property_read_u32(dev_node, "max-fc-vector", &MAX_FC_VECTOR_SIZE);
 	ret = of_property_read_string(dev_node, "system", &sys_str);
-	if(ret == -EINVAL /* property does not exist */
+	if (ret == -EINVAL /* property does not exist */
 		|| strcmp(sys_str, "CONV,FC") == 0) {
 		subdev_phys_idx[0] = 0;
 		subdev_phys_idx[1] = 1;
-	} else if(strcmp(sys_str, "CONV,FC,MX,IPU") == 0) {
+	} else if (strcmp(sys_str, "CONV,FC,MX,IPU") == 0) {
 		subdev_phys_idx[0] = 0;
 		subdev_phys_idx[1] = 1;
 		subdev_phys_idx[2] = 3;
-	} else if(strcmp(sys_str, "CONV,MX,IPU") == 0) {
+	} else if (strcmp(sys_str, "CONV,MX,IPU") == 0) {
 		subdev_phys_idx[0] = 0;
 		subdev_phys_idx[2] = 2;
 	} else {
@@ -727,12 +718,12 @@ static int drm_dev_probe(struct platform_device *pdev)
 		goto fail_dt_system;
 	}
 	for (i = 0; i < DRM_NUM_SUBDEV; i++)
-		if(subdev_phys_idx[i] >= 0)
+		if (subdev_phys_idx[i] >= 0)
 			reg_offset[i] = subdev_phys_idx[i] * 0x1000;  // TODO: use flexible reg_size
 #endif
 
 	for (i = 0; i < DRM_NUM_SUBDEV; i++) {
-		if(subdev_phys_idx[i] >= 0){
+		if (subdev_phys_idx[i] >= 0) {
 #ifdef USE_DEVTREE
 			drm_dev->subdev[i].irqno = of_irq_get(dev_node, subdev_phys_idx[i]);
 #else
@@ -761,23 +752,37 @@ static int drm_dev_probe(struct platform_device *pdev)
 	drm_firmware_attr.private = &drm_dev->subdev[0];
 
 	// Set conv to command list mode
-	if(subdev_phys_idx[0] >= 0)
+	if (subdev_phys_idx[0] >= 0) {
 		iowrite32(1, REG_IO_ADDR((&drm_dev->subdev[0]), 0x40C));
 
+		// Get unified buffer size from register
+		ubuf_size = ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x148));
+		if (ubuf_size > 0)
+			UNIFIED_BUFFER_SIZE = ubuf_size;
+	}
+
 	// Set fc to command list mode
-	if(subdev_phys_idx[1] >= 0)
+	if (subdev_phys_idx[1] >= 0)
 		iowrite32(1, REG_IO_ADDR((&drm_dev->subdev[1]), 0x28));
 
 	// Set firmware to use ROM
-	if(subdev_phys_idx[0] >= 0)
+	if (subdev_phys_idx[0] >= 0)
 		iowrite32(1, REG_IO_ADDR((&drm_dev->subdev[0]), 0x44));
+
+	// Convert unified buffer size from kilobytes to bytes
+	if ((!UNIFIED_BUFFER_SIZE) || (UNIFIED_BUFFER_SIZE > 2097151)) {  // in KBytes
+		pr_warning(DRM_DEV_NAME ": Detected suspicious ubuf-size value %u KB in the device tree, using default %u KB instead",
+			   UNIFIED_BUFFER_SIZE, DEF_UNIFIED_BUFFER_SIZE_KB);
+	}
+	UNIFIED_BUFFER_SIZE <<= 10;
 
 	err = drm_register_chrdev(drm_dev);
 	if (err) {
 		dev_err(&pdev->dev, "register chrdev fail\n");
 		goto fail_register_chrdev;
 	}
-	dev_dbg(&pdev->dev, "probe successful\n");
+	dev_dbg(&pdev->dev, "probe successful: UNIFIED_BUFFER_SIZE=%u\n",
+		UNIFIED_BUFFER_SIZE);
 
 	return 0;
 
