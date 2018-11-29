@@ -53,10 +53,10 @@
 static int irq_no[DRM_NUM_SUBDEV] = {48, 49};
 static unsigned int reg_base = 0x80000000;
 #endif
-static unsigned int reg_offset[DRM_NUM_SUBDEV] = {UINT_MAX, UINT_MAX, UINT_MAX};
-static unsigned int reg_size[DRM_NUM_SUBDEV] = {0x1000, 0x1000, 0x1000};
-static int irq_addr[DRM_NUM_SUBDEV] = {0x420, 0x20, 0x20};
-static const char *subdev_name[DRM_NUM_SUBDEV] = {"conv", "fc", "ipu"};
+static unsigned int reg_offset[DRM_NUM_SUBDEV] = {UINT_MAX, UINT_MAX, UINT_MAX, UINT_MAX};
+static unsigned int reg_size[DRM_NUM_SUBDEV] = {0x1000, 0x1000, 0x1000, 0x1000};
+static int irq_addr[DRM_NUM_SUBDEV] = {0x420, 0x20, 0x20, 0x20};
+static const char *subdev_name[DRM_NUM_SUBDEV] = {"conv", "fc", "ipu", "maximixer"};
 
 #define DEF_UNIFIED_BUFFER_SIZE_KB 640
 uint32_t UNIFIED_BUFFER_SIZE = DEF_UNIFIED_BUFFER_SIZE_KB << 10;
@@ -206,12 +206,14 @@ static int (*cmd_func[DRM_NUM_SUBDEV])(struct device *, struct dmp_cmb *,
 	dv_convert_conv_command,
 	dv_convert_fc_command,
 	dv_convert_ipu_command,
+	dv_convert_maximizer_command,
 };
 
 static void (*run_func[DRM_NUM_SUBDEV])(struct dmp_cmb *, void *) = {
 	dv_run_conv_command,
 	dv_run_fc_command,
 	dv_run_ipu_command,
+	dv_run_maximizer_command,
 };
 
 static long drm_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
@@ -533,10 +535,15 @@ static const struct attribute_group *drm_ipu_attr_groups[] = {
 	NULL
 };
 
+static const struct attribute_group *drm_maximizer_attr_groups[] = {
+	NULL
+};
+
 static const struct attribute_group **drm_attr_groups[DRM_NUM_SUBDEV] = {
 	drm_conv_attr_groups,
 	drm_fc_attr_groups,
 	drm_ipu_attr_groups,
+	drm_maximizer_attr_groups,
 };
 
 int drm_register_chrdev(struct drm_dev *drm_dev)
@@ -718,9 +725,11 @@ static int drm_dev_probe(struct platform_device *pdev)
 		subdev_phys_idx[0] = 0;
 		subdev_phys_idx[1] = 1;
 		subdev_phys_idx[2] = 3;
+		subdev_phys_idx[3] = 2;
 	} else if(strcmp(sys_str, "CONV,MX,IPU") == 0) {
 		subdev_phys_idx[0] = 0;
 		subdev_phys_idx[2] = 2;
+		subdev_phys_idx[3] = 1;
 	} else {
 		err = -EINVAL;
 		pr_err(DRM_DEV_NAME ": %s is not valid DV system.\n", sys_str);

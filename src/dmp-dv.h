@@ -20,7 +20,7 @@
 #define _DMP_DV_H
 
 #define DRM_DEV_NAME "dmp_dv"
-#define DRM_NUM_SUBDEV 3
+#define DRM_NUM_SUBDEV 4
 #define DRM_MAX_FIRMWARE_SIZE 0x2000
 #define DRM_WAIT_TIMEOUT (2 * HZ)
 #define DRM_MAX_WAIT_COUNT 10
