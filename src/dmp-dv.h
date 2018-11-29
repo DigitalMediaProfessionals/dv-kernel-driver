@@ -44,5 +44,8 @@ void dv_run_fc_command(struct dmp_cmb *cmb, void *bar_logical);
 int dv_convert_ipu_command(struct device *dev, struct dmp_cmb *cmb,
 			  struct dmp_dv_kcmd *cmd_info);
 void dv_run_ipu_command(struct dmp_cmb *cmb, void *bar_logical);
+int dv_convert_maximizer_command(struct device *dev, struct dmp_cmb *cmb,
+			  struct dmp_dv_kcmd *cmd_info);
+void dv_run_maximizer_command(struct dmp_cmb *cmb, void *bar_logical);
 
 #endif

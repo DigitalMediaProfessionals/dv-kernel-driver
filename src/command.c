@@ -989,3 +989,111 @@ void dv_run_ipu_command(struct dmp_cmb *cmb, void *bar_logical)
 	}
 	iowrite32(0x1, REG_IO_ADDR(bar_logical, 0x02a0));
 }
+
+// If already a command is converted and not executed yet, -EBUSY is returned.
+static int dv_convert_maximizer_v0(struct device *dev, struct dmp_cmb *cmb,
+			    struct dmp_dv_kcmdraw __user *user_cmd, size_t size)
+{
+	struct dmp_cmb_list_entry *cmb_node;
+	struct dmp_dv_kcmdraw_maximizer_v0 cmd;
+	size_t cmd_size = sizeof(uint32_t) * 2 * 8;
+	uint32_t *cmd_buf;
+	uint32_t in_base_addr = 0, in_sz;
+	uint32_t out_base_addr = 0, out_sz;
+	uint32_t num_pixel;
+	int i = 0;
+	int ret;
+
+	cmb_node = list_first_entry(&cmb->cmb_list, struct dmp_cmb_list_entry, list_node);
+	if (cmb_node->size != 0)
+		return -EBUSY;
+	if (size < sizeof(struct dmp_dv_kcmdraw_maximizer_v0))
+		return -EINVAL;
+	if (copy_from_user(&cmd, user_cmd, size))
+		return -EFAULT;
+
+	ret = get_dma_addr(dev, cmb, &cmd.input_buf, &in_base_addr, &in_sz);
+	if (ret)
+		return ret;
+	ret = get_dma_addr(dev, cmb, &cmd.output_buf, &out_base_addr, &out_sz);
+	if (ret)
+		return ret;
+
+	// new cmb is the size is smaller
+	if (cmb_node->size + cmd_size + 8 > cmb_node->capacity) {
+		cmb_node = dv_cmb_allocate(dev);
+		if (!cmb_node)
+			return -ENOMEM;
+		list_add(&cmb_node->list_node, &cmb->cmb_list);
+	}
+	cmd_buf = (uint32_t*)((uint8_t*)(cmb_node->logical) + cmb_node->size);
+
+	// fill cmb
+	num_pixel = (uint32_t)cmd->width * (uint32_t)cmd->height;
+	cmb[i++] = 0x24;
+	cmb[i++] = (cmd.nclass & 0xff) << 24 | (num_pixel & 0xffffff);
+	cmb[i++] = 0x28;
+	cmb[i++] = in_base_addr;
+	cmb[i++] = 0x2C;
+	cmb[i++] = out_base_addr;
+	cmb[i++] = 0x30;
+	cmb[i++] = num_pixel * cmd.nclass << 4;
+	cmb[i++] = 0x34;
+	cmb[i++] = (num_pixel % 128) * 2 * (cmd.nclass % 8);
+	cmb[i++] = 0x38;
+	cmb[i++] = in_base_addr + (num_pixel * 2 * (cmd.nclass & 0xfff8));
+	cmb[i++] = 0;
+	cmb[i++] = 0;
+
+	return 0;
+}
+
+int dv_convert_maximizer_command(struct device *dev, struct dmp_cmb *cmb,
+			  struct dmp_dv_kcmd *cmd_info)
+{
+	int i;
+	int ret = 0;
+	struct dmp_dv_kcmdraw __user *user_cmds;
+	struct dmp_dv_kcmdraw cmd;
+
+	user_cmds = u64_to_user_ptr(cmd_info->cmd_pointer);
+
+	for (i = 0; i < cmd_info->cmd_num; ++i) {
+		// get size and version first;
+		if (copy_from_user(&cmd, user_cmds, sizeof(cmd)))
+			return -EFAULT;
+		switch (cmd.version) {
+		case 0:
+			ret = dv_convert_maximizer_v0(dev, cmb, user_cmds, cmd.size);
+			if (ret)
+				return ret;
+			break;
+		default:
+			pr_err(DRM_DEV_NAME ": Invalid command version.\n");
+			return -EINVAL;
+		}
+		user_cmds = (struct dmp_dv_kcmdraw __user *)
+			((uint8_t*)user_cmds + cmd.size);
+	}
+
+	return ret;
+}
+
+void dv_run_maximizer_command(struct dmp_cmb *cmb, void *bar_logical)
+{
+	struct dmp_cmb_list_entry *cmb_node;
+	uint32_t *cmd; // in cmd buffer
+	uint32_t offset;
+	uint32_t val;
+
+	cmb_node = list_first_entry(&cmb->cmb_list, struct dmp_cmb_list_entry, list_node);
+	cmd = (uint32_t *)(cmb_node->logical);
+	while(*cmd) {
+		offset = *cmd;
+		cmd++;
+		val = *cmd;
+		cmd++;
+		iowrite32(val, REG_IO_ADDR(bar_logical, offset));
+	}
+	iowrite32(0x1, REG_IO_ADDR(bar_logical, 0x08));
+}
