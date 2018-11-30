@@ -160,9 +160,9 @@ struct dmp_dv_kcmdraw_maximizer_v0 {
 
 	__u16 width;	// width of input
 	__u16 height;	// height of input
-	__u16 nclass;	// # of classes
+	__u8  nclass;	// # of classes
 
-	__u16 rsvd[1];	// padding to 64-bit size
-}
+	__u8  rsvd[3];	// padding to 64-bit size
+};
 
 #endif  // _UAPI_LINUX_DMP_DV_CMDRAW_V0_H
