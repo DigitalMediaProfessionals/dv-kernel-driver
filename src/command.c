@@ -1001,6 +1001,8 @@ static int dv_convert_maximizer_v0(struct device *dev, struct dmp_cmb *cmb,
 	uint32_t in_base_addr = 0, in_sz;
 	uint32_t out_base_addr = 0, out_sz;
 	uint32_t num_pixel;
+	uint32_t block_size;
+	uint32_t last_block_src;
 	int i = 0;
 	int ret;
 
@@ -1030,6 +1032,11 @@ static int dv_convert_maximizer_v0(struct device *dev, struct dmp_cmb *cmb,
 
 	// fill cmb
 	num_pixel = (uint32_t)cmd.width * (uint32_t)cmd.height;
+	block_size = num_pixel * (cmd.nclass > 8 ? 8 : cmd.nclass) * 2;
+	last_block_src = (in_base_addr + num_pixel * cmd.nclass);
+	if(last_block_src % block_size != 0){
+		last_block_src -= last_block_src % block_size;
+	}
 	cmd_buf[i++] = 0x24;
 	cmd_buf[i++] = (uint32_t)cmd.nclass << 24 | (num_pixel & 0xffffff);
 	cmd_buf[i++] = 0x28;
@@ -1037,11 +1044,11 @@ static int dv_convert_maximizer_v0(struct device *dev, struct dmp_cmb *cmb,
 	cmd_buf[i++] = 0x2C;
 	cmd_buf[i++] = out_base_addr;
 	cmd_buf[i++] = 0x30;
-	cmd_buf[i++] = num_pixel * (uint32_t)cmd.nclass << 4;
+	cmd_buf[i++] = block_size;
 	cmd_buf[i++] = 0x34;
 	cmd_buf[i++] = (num_pixel % 128) * 2 * (cmd.nclass % 8);
 	cmd_buf[i++] = 0x38;
-	cmd_buf[i++] = in_base_addr + (num_pixel * 2 * (cmd.nclass & 0xf8));
+	cmd_buf[i++] = last_block_src;
 	cmd_buf[i++] = 0;
 	cmd_buf[i++] = 0;
 
