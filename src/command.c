@@ -323,7 +323,8 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 	}
 	if (copy_from_user(cmd, user_cmd, size)) {
 		kfree(cmd);
-		pr_warn(DRM_DEV_NAME ": copy_from_user() failed for %zu bytes\n", size);
+		pr_warn(DRM_DEV_NAME ": copy_from_user() failed for %zu bytes\n"
+				, size);
 		return -EFAULT;
 	}
 
@@ -464,13 +465,17 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 		conv->run[i].rectifi_en = cmd->run[i].rectifi_en;
 		conv->run[i].lrn = cmd->run[i].lrn;
 
-		if ((conv->run[i].lrn & 1) && ((conv->run[i].conv_enable) || (conv->run[i].pool_enable) || (conv->header.topo != 1))) {
+		if ((conv->run[i].lrn & 1) && ((conv->run[i].conv_enable)
+			|| (conv->run[i].pool_enable)
+			|| (conv->header.topo != 1))) {
 			kfree(cmd);
 			pr_warn(DRM_DEV_NAME ": LRN must be a standalone layer\n");
 			return -EINVAL;
 		}
 
-		if ((cmd->z > 1) || (cmd->run[i].pz > 1) || (cmd->run[i].conv_dilation))  // TODO: add more checks: no maxpool_with_argmax, no unpool_with_argmax.
+		if ((cmd->z > 1)
+			|| (cmd->run[i].pz > 1)
+			|| (cmd->run[i].conv_dilation))  // TODO: add more checks: no maxpool_with_argmax, no unpool_with_argmax.
 			valid_multi_run = 0;
 	}
 	if (output_buf_size < total_output_size ||
@@ -484,15 +489,19 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 	if (cmd->topo != 1) {
 		if (!valid_multi_run) {
 			pr_warn(DRM_DEV_NAME ": Configuration %dx%dx%d z=%d cannot be executed with multiple runs\n",
-					(int)conv->input.w, (int)conv->input.h, (int)conv->input.c, (int)conv->input.z);
+					(int)conv->input.w, (int)conv->input.h,
+					(int)conv->input.c, (int)conv->input.z);
 			kfree(cmd);
 			return -EINVAL;
 		}
-		ubuf_size = ubuf_get_single_tile_usage((struct dmp_dv_kcmdraw_conv_v0*)cmd, UNIFIED_BUFFER_SIZE);
+		ubuf_size = ubuf_get_single_tile_usage(
+				(struct dmp_dv_kcmdraw_conv_v0*)cmd,
+				UNIFIED_BUFFER_SIZE);
 		if (ubuf_size > UNIFIED_BUFFER_SIZE) {
 			kfree(cmd);
 			pr_warn(DRM_DEV_NAME ": Configuration %dx%dx%d requires unified buffer of size %d\n",
-					(int)conv->input.w, (int)conv->input.h, (int)conv->input.c, (int)ubuf_size);
+					(int)conv->input.w, (int)conv->input.h,
+					(int)conv->input.c, (int)ubuf_size);
 			return -EINVAL;
 		}
 	}
@@ -702,13 +711,16 @@ static int dv_convert_fc_v0(struct device *dev, struct dmp_cmb *cmb,
 			quant_base = dma_buf_kmap(dma_buf, ++page_num);
 			if (!quant_base) {
 				pr_err(DRM_DEV_NAME ": dma_buf_kmap() failed\n");
-				dma_buf_end_cpu_access(dma_buf, DMA_BIDIRECTIONAL);
+				dma_buf_end_cpu_access(dma_buf,
+							DMA_BIDIRECTIONAL);
 				dma_buf_put(dma_buf);
 				return -ENOMEM;
 			}
 			quant = ((__u16*)quant_base) - n;
 			for (; i < 256; i++) {
-				cmd_buf[15 + i] = (0x21 << 24) | (i << 16) | quant[i];
+				cmd_buf[15 + i] = (0x21 << 24)
+						| (i << 16)
+						| quant[i];
 			}
 			dma_buf_kunmap(dma_buf, page_num, quant_base);
 		}
@@ -737,14 +749,14 @@ int dv_convert_fc_command(struct device *dev, struct dmp_cmb *cmb,
 		if (copy_from_user(&cmd, user_cmds, sizeof(cmd)))
 			return -EFAULT;
 		switch (cmd.version) {
-			case 0:
-				ret = dv_convert_fc_v0(dev, cmb, user_cmds, cmd.size);
-				if (ret)
-					return ret;
-				break;
-			default:
-				pr_err(DRM_DEV_NAME ": Invalid command version.\n");
-				return -EINVAL;
+		case 0:
+			ret = dv_convert_fc_v0(dev, cmb, user_cmds, cmd.size);
+			if (ret)
+				return ret;
+			break;
+		default:
+			pr_err(DRM_DEV_NAME ": Invalid command version.\n");
+			return -EINVAL;
 		}
 		user_cmds = (struct dmp_dv_kcmdraw __user *)
 			((uint8_t*)user_cmds + cmd.size);
