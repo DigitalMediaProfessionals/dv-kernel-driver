@@ -163,7 +163,7 @@ void dv_cmb_finalize(struct device *dev, struct dmp_cmb *cmb)
 
 	list_for_each_entry_safe(lobj, ltmp, &cmb->cmb_list, list_node) {
 		dma_free_coherent(dev, lobj->capacity, lobj->logical,
-							lobj->physical);
+				lobj->physical);
 		list_del(&lobj->list_node);
 		kfree(lobj);
 	}
@@ -180,8 +180,8 @@ void dv_cmb_finalize(struct device *dev, struct dmp_cmb *cmb)
 
 // NOTE: addr is uint32_t since the HW can only use 32-bit address.
 static int get_dma_addr(struct device *dev, struct dmp_cmb *cmb,
-				struct dmp_dv_kbuf *buf,
-				uint32_t *addr, uint32_t *buf_size)
+			struct dmp_dv_kbuf *buf,
+			uint32_t *addr, uint32_t *buf_size)
 {
 	struct dmp_dmabuf_hash_entry *obj;
 	struct scatterlist *sg;
@@ -196,7 +196,7 @@ static int get_dma_addr(struct device *dev, struct dmp_cmb *cmb,
 
 	if (buf->offs & 15) {  // check required alignment
 		pr_warn(DRM_DEV_NAME ": got unaligned offset %llu\n",
-					(unsigned long long)buf->offs);
+				(unsigned long long)buf->offs);
 		return -EINVAL;
 	}
 
@@ -337,7 +337,7 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 
 	init_conv_input_size_v0(cmd, &conv_size);
 	ret = get_dma_addr(dev, cmb, &cmd->input_buf, &input_base_addr,
-							&input_buf_size);
+			&input_buf_size);
 	if (ret) {
 		kfree(cmd);
 		pr_warn(DRM_DEV_NAME ": get_dma_addr() failed for input\n");
@@ -346,18 +346,18 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 	if (input_buf_size < conv_size.size) {
 		kfree(cmd);
 		pr_warn(DRM_DEV_NAME ": got input buffer size %u while %u was expected\n",
-						input_buf_size, conv_size.size);
+				input_buf_size, conv_size.size);
 		return -EINVAL;
 	}
 	ret = get_dma_addr(dev, cmb, &cmd->output_buf, &output_base_addr,
-							&output_buf_size);
+			&output_buf_size);
 	if (ret) {
 		kfree(cmd);
 		pr_warn(DRM_DEV_NAME ": get_dma_addr() failed for output\n");
 		return ret;
 	}
 	ret = get_dma_addr(dev, cmb, &cmd->eltwise_buf, &eltwise_base_addr,
-							&eltwise_buf_size);
+			&eltwise_buf_size);
 	if (ret) {
 		kfree(cmd);
 		pr_warn(DRM_DEV_NAME ": get_dma_addr() failed for eltwise\n");
@@ -365,7 +365,7 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 	}
 
 	cmb_node = list_first_entry(&cmb->cmb_list, struct dmp_cmb_list_entry,
-								list_node);
+				list_node);
 	cmd_size = conf_size(cmd->topo) + sizeof(uint32_t) * 5;
 	conv_len = (conf_size(cmd->topo) + 3) / 4;
 	// include size of jump or interrupt commands
@@ -425,7 +425,7 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 			return -EINVAL;
 		}
 		get_conv_output_size_v0(&cmd->run[i], &conv_size, &conv_size,
-								&weight_size);
+					&weight_size);
 		if ((cmd->topo >> i) & 1) {
 			total_output_size += conv_size.size;
 			init_conv_input_size_v0(cmd, &conv_size);
@@ -441,7 +441,7 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 				weight_buf_size < weight_size) {
 			kfree(cmd);
 			pr_warn(DRM_DEV_NAME ": got weights buffer size %u while expected %u\n",
-								weight_buf_size, weight_size);
+					weight_buf_size, weight_size);
 			return -EINVAL;
 		}
 
@@ -511,7 +511,7 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 }
 
 int dv_convert_conv_command(struct device *dev, struct dmp_cmb *cmb,
-					struct dmp_dv_kcmd *cmd_info)
+			struct dmp_dv_kcmd *cmd_info)
 {
 	int i;
 	int ret = 0;
@@ -534,7 +534,7 @@ int dv_convert_conv_command(struct device *dev, struct dmp_cmb *cmb,
 			break;
 		default:
 			pr_warn(DRM_DEV_NAME ": Invalid CONV command version: %u\n",
-									cmd.version);
+					cmd.version);
 			return -EINVAL;
 		}
 		user_cmds = (struct dmp_dv_kcmdraw __user *)
@@ -553,7 +553,7 @@ void dv_run_conv_command(struct dmp_cmb *cmb, void *bar_logical)
 
 	list_for_each_entry(cmb_node, &cmb->cmb_list, list_node) {
 		cmd_buf = (uint32_t *)((uint8_t *)cmb_node->logical +
-							cmb_node->size);
+					cmb_node->size);
 		if (prev_size == 0) {
 			cmd_buf[0] = 0x0108f004; // Write one word to 0x108
 			cmd_buf[1] = 0x00000001; // Set interrupt register
@@ -597,29 +597,29 @@ static int dv_convert_fc_v0(struct device *dev, struct dmp_cmb *cmb,
 
 	if ((!cmd.input_size) || (cmd.input_size > MAX_FC_VECTOR_SIZE)) {
 		pr_warn(DRM_DEV_NAME ": got unsupported input size %hu for FC layer\n",
-								cmd.input_size);
+				cmd.input_size);
 		return -EINVAL;
 	}
 	if ((!cmd.output_size) || (cmd.output_size > MAX_FC_VECTOR_SIZE)) {
 		pr_warn(DRM_DEV_NAME ": got unsupported output size %hu for FC layer\n",
-								cmd.output_size);
+				cmd.output_size);
 		return -EINVAL;
 	}
 
 	ret = get_dma_addr(dev, cmb, &cmd.input_buf, &input_base_addr,
-							&input_buf_size);
+			&input_buf_size);
 	if (ret)
 		return ret;
 	if (input_buf_size < cmd.input_size * 2)
 		return -EINVAL;
 	ret = get_dma_addr(dev, cmb, &cmd.output_buf, &output_base_addr,
-							&output_buf_size);
+			&output_buf_size);
 	if (ret)
 		return ret;
 	if (output_buf_size < cmd.output_size * 2)
 		return -EINVAL;
 	ret = get_dma_addr(dev, cmb, &cmd.weight_buf, &weight_base_addr,
-							&weight_buf_size);
+			&weight_buf_size);
 	if (ret)
 		return ret;
 	if (cmd.weight_fmt == 0) {
@@ -636,12 +636,12 @@ static int dv_convert_fc_v0(struct device *dev, struct dmp_cmb *cmb,
 	weight_size = ALIGN(weight_size, 16);
 	if (weight_buf_size < weight_size) {
 		pr_warn(DRM_DEV_NAME ": FC weight buffer size %u less than required %u\n",
-						weight_buf_size, weight_size);
+				weight_buf_size, weight_size);
 		return -EINVAL;
 	}
 
 	cmb_node = list_first_entry(&cmb->cmb_list, struct dmp_cmb_list_entry,
-								list_node);
+				list_node);
 	cmd_size = sizeof(uint32_t) * (16 + (cmd.weight_fmt ? 257 : 0));
 	// include size of jump or interrupt commands
 	if (cmb_node->size + cmd_size + 8 > cmb_node->capacity) {
@@ -723,7 +723,7 @@ static int dv_convert_fc_v0(struct device *dev, struct dmp_cmb *cmb,
 }
 
 int dv_convert_fc_command(struct device *dev, struct dmp_cmb *cmb,
-					struct dmp_dv_kcmd *cmd_info)
+			struct dmp_dv_kcmd *cmd_info)
 {
 	int i;
 	int ret = 0;
@@ -762,7 +762,7 @@ void dv_run_fc_command(struct dmp_cmb *cmb, void *bar_logical)
 
 	list_for_each_entry(cmb_node, &cmb->cmb_list, list_node) {
 		cmd_buf = (uint32_t *)((uint8_t *)cmb_node->logical +
-							cmb_node->size);
+					cmb_node->size);
 		if (prev_size == 0) {
 			cmd_buf[0] = 0x0008f004; // Write one word to 0x8
 			cmd_buf[1] = 0x00000001; // Set interrupt register
@@ -940,7 +940,7 @@ static int dv_convert_ipu_v0(struct device *dev, struct dmp_cmb *cmb,
 }
 
 int dv_convert_ipu_command(struct device *dev, struct dmp_cmb *cmb,
-					struct dmp_dv_kcmd *cmd_info)
+			struct dmp_dv_kcmd *cmd_info)
 {
 	int i;
 	int ret = 0;
@@ -991,7 +991,7 @@ void dv_run_ipu_command(struct dmp_cmb *cmb, void *bar_logical)
 
 // If already a command is converted and not executed yet, -EBUSY is returned.
 static int dv_convert_maximizer_v0(struct device *dev, struct dmp_cmb *cmb,
-		struct dmp_dv_kcmdraw __user *user_cmd, size_t size)
+			struct dmp_dv_kcmdraw __user *user_cmd, size_t size)
 {
 	struct dmp_cmb_list_entry *cmb_node;
 	struct dmp_dv_kcmdraw_maximizer_v0 cmd;
@@ -1055,7 +1055,7 @@ static int dv_convert_maximizer_v0(struct device *dev, struct dmp_cmb *cmb,
 }
 
 int dv_convert_maximizer_command(struct device *dev, struct dmp_cmb *cmb,
-		struct dmp_dv_kcmd *cmd_info)
+				struct dmp_dv_kcmd *cmd_info)
 {
 	int i;
 	int ret = 0;
