@@ -788,13 +788,13 @@ void dv_run_fc_command(struct dmp_cmb *cmb, void *bar_logical)
 static uint32_t dv_ipu_v0_get_cmb_size(const struct dmp_dv_kcmdraw_ipu_v0 *cmd)
 {
 	uint32_t nreg = 10;
-	if(cmd->use_tex) {
+	if (cmd->use_tex) {
 		nreg += 6;
 	}
-	if(cmd->use_rd) {
+	if (cmd->use_rd) {
 		nreg += 2;
 	}
-	if(cmd->fmt_tex == 7 && cmd->use_tex != 0) {
+	if (cmd->fmt_tex == 7 && cmd->use_tex != 0) {
 		nreg += cmd->ncolor_lut;
 	}
 	return sizeof(uint32_t) * 2 * nreg;
@@ -845,7 +845,7 @@ static uint32_t dv_convert_ipu_v0_fill_cmb(
 	cmd_buf[i++] = cmd->scale_width;
 	cmd_buf[i++] = 0x0100; // Write to 0x100
 	cmd_buf[i++] = cmd->use_tex ? 0x00ff0002 : 0;
-	if(cmd->use_tex) {
+	if (cmd->use_tex) {
 		cmd_buf[i++] = 0x0154; // Write to 0x154
 		cmd_buf[i++] = tex_base_addr;
 		cmd_buf[i++] = 0x0158; // Write to 0x158
@@ -859,7 +859,7 @@ static uint32_t dv_convert_ipu_v0_fill_cmb(
 		cmd_buf[i++] = 0x015c; // Write to 0x15c
 		cmd_buf[i++] = 1; // 1 = LL, 0 = UL
 	}
-	if(cmd->use_rd) {
+	if (cmd->use_rd) {
 		cmd_buf[i++] = 0x0280; // Write to 0x280
 		cmd_buf[i++] = rd_base_addr;
 		cmd_buf[i++] = 0x0288; // Write to 0x288
@@ -873,7 +873,7 @@ static uint32_t dv_convert_ipu_v0_fill_cmb(
 	cmd_buf[i++] = fmt_and_flag; // rdFmt, wrFmt, rdEn, faEn, alpha
 	cmd_buf[i++] = 0x0298; // Write to 0x298
 	cmd_buf[i++] = cnv; // conversion to fp16
-	if(cmd->fmt_tex == 7 && cmd->use_tex != 0) {
+	if (cmd->fmt_tex == 7 && cmd->use_tex != 0) {
 		for(j = 0; j < cmd->ncolor_lut; j++) {
 			cmd_buf[i++] = 0x01f0; // Write to 0x01f0
 			cmd_buf[i++] = cmd->lut[j];
@@ -898,7 +898,8 @@ static int dv_convert_ipu_v0(struct device *dev, struct dmp_cmb *cmb,
 	uint32_t wr_base_addr = 0, wr_buf_size;
 	int ret;
 
-	cmb_node = list_first_entry(&cmb->cmb_list, struct dmp_cmb_list_entry, list_node);
+	cmb_node = list_first_entry(&cmb->cmb_list,
+			struct dmp_cmb_list_entry, list_node);
 	if (cmb_node->size != 0)
 		return -EBUSY;
 	if (size < sizeof(struct dmp_dv_kcmdraw_ipu_v0))
@@ -910,14 +911,16 @@ static int dv_convert_ipu_v0(struct device *dev, struct dmp_cmb *cmb,
 	ret = get_dma_addr(dev, cmb, &cmd.wr, &wr_base_addr, &wr_buf_size);
 	if (ret)
 		return ret;
-	if(cmd.use_tex) {
-		ret = get_dma_addr(dev, cmb, &cmd.tex, &tex_base_addr, &tex_buf_size);
+	if (cmd.use_tex) {
+		ret = get_dma_addr(dev, cmb, &cmd.tex,
+				&tex_base_addr, &tex_buf_size);
 		if (ret)
 			return ret;
 		cmd_size += sizeof(uint32_t) * 6;
 	}
-	if(cmd.use_rd) {
-		ret = get_dma_addr(dev, cmb, &cmd.rd, &rd_base_addr, &rd_buf_size);
+	if (cmd.use_rd) {
+		ret = get_dma_addr(dev, cmb, &cmd.rd,
+				&rd_base_addr, &rd_buf_size);
 		if (ret)
 			return ret;
 		cmd_size += sizeof(uint32_t) * 4;
@@ -977,9 +980,10 @@ void dv_run_ipu_command(struct dmp_cmb *cmb, void *bar_logical)
 	uint32_t offset;
 	uint32_t val;
 
-	cmb_node = list_first_entry(&cmb->cmb_list, struct dmp_cmb_list_entry, list_node);
+	cmb_node = list_first_entry(&cmb->cmb_list,
+			struct dmp_cmb_list_entry, list_node);
 	cmd = (uint32_t *)(cmb_node->logical);
-	while(*cmd) {
+	while (*cmd) {
 		offset = *cmd;
 		cmd++;
 		val = *cmd;
@@ -1005,7 +1009,8 @@ static int dv_convert_maximizer_v0(struct device *dev, struct dmp_cmb *cmb,
 	int i = 0;
 	int ret;
 
-	cmb_node = list_first_entry(&cmb->cmb_list, struct dmp_cmb_list_entry, list_node);
+	cmb_node = list_first_entry(&cmb->cmb_list,
+			struct dmp_cmb_list_entry, list_node);
 	if (cmb_node->size != 0)
 		return -EBUSY;
 	if (size < sizeof(struct dmp_dv_kcmdraw_maximizer_v0))
@@ -1033,11 +1038,11 @@ static int dv_convert_maximizer_v0(struct device *dev, struct dmp_cmb *cmb,
 	num_pixel = (uint32_t)cmd.width * (uint32_t)cmd.height;
 	block_size = num_pixel * (cmd.nclass > 8 ? 8 : cmd.nclass) * 2;
 	last_block_src = (in_base_addr + num_pixel * cmd.nclass);
-	if(last_block_src % block_size != 0){
+	if (last_block_src % block_size != 0){
 		last_block_src -= last_block_src % block_size;
 	}
 	cmd_buf[i++] = 0x24;
-	cmd_buf[i++] = (uint32_t)cmd.nclass << 24 | (num_pixel & 0xffffff);
+	cmd_buf[i++] = ((uint32_t)cmd.nclass << 24) | (num_pixel & 0xffffff);
 	cmd_buf[i++] = 0x28;
 	cmd_buf[i++] = in_base_addr;
 	cmd_buf[i++] = 0x2C;
@@ -1070,7 +1075,8 @@ int dv_convert_maximizer_command(struct device *dev, struct dmp_cmb *cmb,
 			return -EFAULT;
 		switch (cmd.version) {
 		case 0:
-			ret = dv_convert_maximizer_v0(dev, cmb, user_cmds, cmd.size);
+			ret = dv_convert_maximizer_v0(dev,
+					cmb, user_cmds, cmd.size);
 			if (ret)
 				return ret;
 			break;
@@ -1092,9 +1098,10 @@ void dv_run_maximizer_command(struct dmp_cmb *cmb, void *bar_logical)
 	uint32_t offset;
 	uint32_t val;
 
-	cmb_node = list_first_entry(&cmb->cmb_list, struct dmp_cmb_list_entry, list_node);
+	cmb_node = list_first_entry(&cmb->cmb_list,
+			struct dmp_cmb_list_entry, list_node);
 	cmd = (uint32_t *)(cmb_node->logical);
-	while(*cmd) {
+	while (*cmd) {
 		offset = *cmd;
 		cmd++;
 		val = *cmd;
