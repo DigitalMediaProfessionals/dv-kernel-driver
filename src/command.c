@@ -580,9 +580,10 @@ void dv_run_conv_command(struct dmp_cmb *cmb, void *bar_logical)
 	iowrite32(0x1, REG_IO_ADDR(bar_logical, 0x0408));
 
 #ifdef _TVGEN_
-	tvgen_iowrite32(prev_addr, REG_IO_ADDR(bar_logical, 0x0400));
-	tvgen_iowrite32(prev_size / 8, REG_IO_ADDR(bar_logical, 0x0404));
-	tvgen_iowrite32(0x1, REG_IO_ADDR(bar_logical, 0x0408));
+	tvgen_w32(prev_addr, TVGEN_DEV_CONV, 0x0400);
+	tvgen_w32(prev_size / 8, TVGEN_DEV_CONV, 0x0404);
+	tvgen_w32(0x1, TVGEN_DEV_CONV, 0x0408);
+	tvgen_w32_irq(0, TVGEN_DEV_CONV);
 #endif
 }
 
@@ -795,9 +796,10 @@ void dv_run_fc_command(struct dmp_cmb *cmb, void *bar_logical)
 	iowrite32(0x1, REG_IO_ADDR(bar_logical, 0x8));
 
 #ifdef _TVGEN_
-	tvgen_iowrite32(prev_size / 8, REG_IO_ADDR(bar_logical, 0x0));
-	tvgen_iowrite32(prev_addr, REG_IO_ADDR(bar_logical, 0x4));
-	tvgen_iowrite32(0x1, REG_IO_ADDR(bar_logical, 0x8));
+	tvgen_w32(prev_size / 8, TVGEN_DEV_FC, 0x0);
+	tvgen_w32(prev_addr, TVGEN_DEV_FC, 0x4);
+	tvgen_w32(0x1, TVGEN_DEV_FC, 0x8);
+	tvgen_w32_irq(0, TVGEN_DEV_FC);
 #endif
 }
 
@@ -1004,12 +1006,13 @@ void dv_run_ipu_command(struct dmp_cmb *cmb, void *bar_logical)
 		iowrite32(val, REG_IO_ADDR(bar_logical, offset));
 
 #ifdef _TVGEN_
-		tvgen_iowrite32(val, REG_IO_ADDR(bar_logical, offset));
+		tvgen_w32(val, TVGEN_DEV_IPU, offset);
 #endif
 	}
 	iowrite32(0x1, REG_IO_ADDR(bar_logical, 0x02a0));
 
 #ifdef _TVGEN_
-	tvgen_iowrite32(0x1, REG_IO_ADDR(bar_logical, 0x02a0));
+	tvgen_w32(0x1, TVGEN_DEV_IPU, 0x02a0);
+	tvgen_w32_irq(0, TVGEN_DEV_IPU);
 #endif
 }

@@ -232,8 +232,6 @@ static long drm_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
 	switch (cmd) {
 	case DMP_DV_IOC_APPEND_CMD:
-        pr_debug(DRM_DEV_NAME": DMP_DV_IOC_APPEND_CMD\n");
-        
 		if (_IOC_SIZE(cmd) > sizeof(cmd_info))
 			return -EINVAL;
 		if (copy_from_user(&cmd_info, (void __user *)arg,
@@ -242,8 +240,6 @@ static long drm_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		ret = cmd_func[minor](drm_dev->dev, dev_pri->cmb, &cmd_info);
 		break;
 	case DMP_DV_IOC_RUN:
-        pr_debug(DRM_DEV_NAME": DMP_DV_IOC_RUN\n");
-
 		wo = kmalloc(sizeof(*wo), GFP_KERNEL);
 		if (!wo)
 			return -ENOMEM;
@@ -261,8 +257,6 @@ static long drm_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		spin_unlock(&dev_pri->dev->wq_exclusive);
 		break;
 	case DMP_DV_IOC_WAIT:
-        pr_debug(DRM_DEV_NAME": DMP_DV_IOC_WAIT\n");
-
 		if (copy_from_user(&cmd_id, (void __user *)arg, _IOC_SIZE(cmd)))
 			return -EFAULT;
 		ret = wait_cmd_id(dev_pri->dev, cmd_id);
@@ -345,6 +339,7 @@ static ssize_t loop_control_store(struct device *dev,
 	if (ret < 0)
 		return ret;
 	iowrite32(loop_control, REG_IO_ADDR((&drm_dev->subdev[0]), 0x48));
+	pr_debug(DRM_DEV_NAME": loop_control_store\n");
 	return len;
 }
 
@@ -386,6 +381,8 @@ static ssize_t drm_firmware_write(struct file *filp, struct kobject *kobj,
 
 	pr_info(DRM_DEV_NAME ": Updating firmware 0x%04x..0x%04x.\n",
 		(unsigned int)pos, (unsigned int)(pos + count));
+
+	pr_debug(DRM_DEV_NAME": drm_firmware_write\n");
 
 	iowrite32(pos, REG_IO_ADDR(subdev, 0x80));
 	while (len--) {
@@ -677,6 +674,10 @@ static int drm_dev_probe(struct platform_device *pdev)
 
 	dev_dbg(&pdev->dev, "probe begin\n");
 
+#ifdef _TVGEN_
+	tvgen_init();
+#endif
+
 	drm_dev = devm_kzalloc(&pdev->dev, sizeof(struct drm_dev), GFP_KERNEL);
 	if (!drm_dev) {
 		err = -ENOMEM;
@@ -692,7 +693,6 @@ static int drm_dev_probe(struct platform_device *pdev)
 		err = -ENOMEM;
 		goto fail_dma_set_mask;
 	}
-
 #ifdef USE_DEVTREE
 	dev_node = pdev->dev.of_node;
 	parent_node = of_get_parent(dev_node);
@@ -756,18 +756,22 @@ static int drm_dev_probe(struct platform_device *pdev)
 			drm_dev->subdev[i].cmd_id = 0;
 			drm_dev->subdev[i].hw_id = 0;
 		}
+#ifdef _TVGEN_
+		tvgen_dev_info[i].bar_physical = drm_dev->subdev[i].bar_physical;
+		tvgen_dev_info[i].reg_offset = reg_offset[i];
+		tvgen_dev_info[i].irq_addr = irq_addr[i];
+#endif
 	}
 
 	// set firmware private attribute to conv subdev
 	drm_firmware_attr.private = &drm_dev->subdev[0];
 
-#ifdef _TVGEN_
-    tvgen_start(0,0,0);
-#endif
-
 	// Set conv to command list mode
 	if (subdev_phys_idx[0] >= 0) {
 		iowrite32(1, REG_IO_ADDR((&drm_dev->subdev[0]), 0x40C));
+#ifdef _TVGEN_
+		tvgen_add_list(1, 0, 0x40C);
+#endif
 
 		// Get unified buffer size from register
 		ubuf_size = ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x148));
@@ -777,11 +781,25 @@ static int drm_dev_probe(struct platform_device *pdev)
 
 	// Set fc to command list mode
 	if (subdev_phys_idx[1] >= 0)
+	  {
 		iowrite32(1, REG_IO_ADDR((&drm_dev->subdev[1]), 0x28));
+#ifdef _TVGEN_
+		tvgen_add_list(1, 1, 0x28);
+#endif
+	  }
 
 	// Set firmware to use ROM
 	if (subdev_phys_idx[0] >= 0)
+	  {
 		iowrite32(1, REG_IO_ADDR((&drm_dev->subdev[0]), 0x44));
+#ifdef _TVGEN_
+		tvgen_add_list(1, 0, 0x44);
+#endif
+	  }
+
+#ifdef _TVGEN_
+	tvgen_start(0);
+#endif
 
 	// Convert unified buffer size from kilobytes to bytes
 	if ((!UNIFIED_BUFFER_SIZE) || (UNIFIED_BUFFER_SIZE > 2097151)) {  // in KBytes
@@ -837,7 +855,8 @@ static int drm_dev_remove(struct platform_device *pdev)
 	}
 
 #ifdef _TVGEN_
-    tvgen_end();
+	tvgen_end();
+	tvgen_release();
 #endif
 
 	dev_dbg(&pdev->dev, "remove successful\n");

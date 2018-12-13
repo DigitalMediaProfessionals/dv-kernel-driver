@@ -18,12 +18,30 @@
 #ifndef _TVGEN_H
 #define _TVGEN_H
 
-#define TVGEN_DEFAULT_PHI_OCP_FILENAME "phi_ocp.txt"
-#define TVGEN_DEFAULT_MEMDUMP_FILENAME "memdump.txt"
 #define TVGEN_DEFAULT_FILE_PATH "/tmp"
+#define TVGEN_PHI_OCP_FILENAME "/phi_ocp.txt"
+#define TVGEN_MEMDUMP_FILENAME "/memdump.txt"
 
-void tvgen_start(const char* path, const char* ocp_name, const char* mem_name);
+enum TVGEN_DEV_ID {
+  TVGEN_DEV_CONV =0,
+  TVGEN_DEV_FC,
+  TVGEN_DEV_IPU
+};
+
+typedef struct
+{
+  phys_addr_t bar_physical;
+  unsigned int reg_offset;
+  int irq_addr;
+} tvgen_dev;
+extern tvgen_dev tvgen_dev_info[];
+
+void tvgen_init(void);
+void tvgen_release(void);
+void tvgen_start(const char* path);
 void tvgen_end(void);
-void tvgen_iowrite32(u32 value, void __iomem* addr); // write to phi_ocp.txt
+void tvgen_w32(u32 value, u32 devid, u32 offset);
+void tvgen_w32_irq(u32 value, u32 devid);
+void tvgen_add_list(u32 value, u32 devid, u32 offset);
 
 #endif//_TVGEN_H
