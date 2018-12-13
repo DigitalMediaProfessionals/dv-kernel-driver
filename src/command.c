@@ -509,13 +509,13 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 		}
 	}
 	/*pr_info(DRM_DEV_NAME ">>>\n");
-	  for (i = 0; i < (cmd_size >> 2); ++i)
-	  	pr_info(DRM_DEV_NAME ": %u: %08X\n", i << 2, cmd_buf[i]);
-	  pr_info(DRM_DEV_NAME "<<<\n");*/
+	for (i = 0; i < (cmd_size >> 2); ++i)
+		pr_info(DRM_DEV_NAME ": %u: %08X\n", i << 2, cmd_buf[i]);
+	pr_info(DRM_DEV_NAME "<<<\n");*/
 	/*if (conv->run[0].lrn)
 	  	pr_info(DRM_DEV_NAME ": LRN tiles: %dx%dx%d: %d\n",
-	  (int)conv->input.w, (int)conv->input.h, (int)conv->input.c,
-	  (int)conv->input.tiles);*/
+	(int)conv->input.w, (int)conv->input.h, (int)conv->input.c,
+	(int)conv->input.tiles);*/
 	cmb_node->size += cmd_size;
 
 	kfree(cmd);
