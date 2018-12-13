@@ -25,6 +25,10 @@
 #include "../uapi/dmp_dv_cmdraw_v0.h"
 #include "../uapi/dimensions.h"
 
+#ifdef _TVGEN_
+#include "tvgen.h"
+#endif
+
 #define MAX_NUM_RUNS 32
 #define CMB_SIZE (16 * PAGE_SIZE)
 
@@ -574,6 +578,12 @@ void dv_run_conv_command(struct dmp_cmb *cmb, void *bar_logical)
 	iowrite32(prev_addr, REG_IO_ADDR(bar_logical, 0x0400));
 	iowrite32(prev_size / 8, REG_IO_ADDR(bar_logical, 0x0404));
 	iowrite32(0x1, REG_IO_ADDR(bar_logical, 0x0408));
+
+#ifdef _TVGEN_
+	tvgen_iowrite32(prev_addr, REG_IO_ADDR(bar_logical, 0x0400));
+	tvgen_iowrite32(prev_size / 8, REG_IO_ADDR(bar_logical, 0x0404));
+	tvgen_iowrite32(0x1, REG_IO_ADDR(bar_logical, 0x0408));
+#endif
 }
 
 static int dv_convert_fc_v0(struct device *dev, struct dmp_cmb *cmb,
@@ -783,6 +793,12 @@ void dv_run_fc_command(struct dmp_cmb *cmb, void *bar_logical)
 	iowrite32(prev_size / 8, REG_IO_ADDR(bar_logical, 0x0));
 	iowrite32(prev_addr, REG_IO_ADDR(bar_logical, 0x4));
 	iowrite32(0x1, REG_IO_ADDR(bar_logical, 0x8));
+
+#ifdef _TVGEN_
+	tvgen_iowrite32(prev_size / 8, REG_IO_ADDR(bar_logical, 0x0));
+	tvgen_iowrite32(prev_addr, REG_IO_ADDR(bar_logical, 0x4));
+	tvgen_iowrite32(0x1, REG_IO_ADDR(bar_logical, 0x8));
+#endif
 }
 
 static uint32_t dv_ipu_v0_get_cmb_size(const struct dmp_dv_kcmdraw_ipu_v0 *cmd)
@@ -986,6 +1002,14 @@ void dv_run_ipu_command(struct dmp_cmb *cmb, void *bar_logical)
 		val = *cmd;
 		cmd++;
 		iowrite32(val, REG_IO_ADDR(bar_logical, offset));
+
+#ifdef _TVGEN_
+		tvgen_iowrite32(val, REG_IO_ADDR(bar_logical, offset));
+#endif
 	}
 	iowrite32(0x1, REG_IO_ADDR(bar_logical, 0x02a0));
+
+#ifdef _TVGEN_
+	tvgen_iowrite32(0x1, REG_IO_ADDR(bar_logical, 0x02a0));
+#endif
 }

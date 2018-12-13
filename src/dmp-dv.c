@@ -47,6 +47,10 @@
 #include "dmp-dv.h"
 #include "../uapi/dmp-dv.h"
 
+#ifdef _TVGEN_
+#include "tvgen.h"
+#endif
+
 #define REG_IO_ADDR(DV, OF) ((void __iomem *)(DV->bar_logical) + OF)
 
 #ifndef USE_DEVTREE
@@ -228,6 +232,8 @@ static long drm_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
 	switch (cmd) {
 	case DMP_DV_IOC_APPEND_CMD:
+        pr_debug(DRM_DEV_NAME": DMP_DV_IOC_APPEND_CMD\n");
+        
 		if (_IOC_SIZE(cmd) > sizeof(cmd_info))
 			return -EINVAL;
 		if (copy_from_user(&cmd_info, (void __user *)arg,
@@ -236,6 +242,8 @@ static long drm_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		ret = cmd_func[minor](drm_dev->dev, dev_pri->cmb, &cmd_info);
 		break;
 	case DMP_DV_IOC_RUN:
+        pr_debug(DRM_DEV_NAME": DMP_DV_IOC_RUN\n");
+
 		wo = kmalloc(sizeof(*wo), GFP_KERNEL);
 		if (!wo)
 			return -ENOMEM;
@@ -253,6 +261,8 @@ static long drm_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		spin_unlock(&dev_pri->dev->wq_exclusive);
 		break;
 	case DMP_DV_IOC_WAIT:
+        pr_debug(DRM_DEV_NAME": DMP_DV_IOC_WAIT\n");
+
 		if (copy_from_user(&cmd_id, (void __user *)arg, _IOC_SIZE(cmd)))
 			return -EFAULT;
 		ret = wait_cmd_id(dev_pri->dev, cmd_id);
@@ -751,6 +761,10 @@ static int drm_dev_probe(struct platform_device *pdev)
 	// set firmware private attribute to conv subdev
 	drm_firmware_attr.private = &drm_dev->subdev[0];
 
+#ifdef _TVGEN_
+    tvgen_start(0,0,0);
+#endif
+
 	// Set conv to command list mode
 	if (subdev_phys_idx[0] >= 0) {
 		iowrite32(1, REG_IO_ADDR((&drm_dev->subdev[0]), 0x40C));
@@ -821,6 +835,10 @@ static int drm_dev_remove(struct platform_device *pdev)
 
 		platform_set_drvdata(pdev, NULL);
 	}
+
+#ifdef _TVGEN_
+    tvgen_end();
+#endif
 
 	dev_dbg(&pdev->dev, "remove successful\n");
 	return 0;

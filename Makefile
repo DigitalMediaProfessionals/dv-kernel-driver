@@ -31,7 +31,8 @@ MOD = dmp_dv
 KERNELDIR ?= /lib/modules/`uname -r`/build
 
 obj-m := $(MOD).o
-$(MOD)-objs  := ./src/dmp-dv.o ./src/command.o
+$(MOD)-objs  := ./src/dmp-dv.o ./src/command.o ./src/tvgen.o
+ccflags-y := -D_TVGEN_ -DDEBUG
 
 all:
 	$(MAKEARCH) -C $(KERNELDIR) M=$(PWD) modules
