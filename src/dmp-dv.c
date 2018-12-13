@@ -607,7 +607,7 @@ int drm_register_chrdev(struct drm_dev *drm_dev)
 					  DRM_DEV_NAME, &(drm_dev->subdev[i]));
 			if (err) {
 				device_destroy(dddrm_class,
-						MKDEV(driver_major, i));
+					       MKDEV(driver_major, i));
 				dev_err(drm_dev->dev,
 					"request_irq FAIL: IRQ=%d ERR=%d\n",
 					rIRQ, err);
@@ -624,7 +624,7 @@ int drm_register_chrdev(struct drm_dev *drm_dev)
 			if (!drm_dev->subdev[i].wq) {
 				err = -ENOMEM;
 				device_destroy(dddrm_class,
-						MKDEV(driver_major, i));
+					       MKDEV(driver_major, i));
 				dev_err(drm_dev->dev,
 					"work queue allocation fail %d\n", i);
 				goto fail_device_init;
@@ -756,7 +756,7 @@ static int drm_dev_probe(struct platform_device *pdev)
 #endif
 
 	for (i = 0; i < DRM_NUM_SUBDEV; i++) {
-		if (subdev_phys_idx[i] >= 0){
+		if (subdev_phys_idx[i] >= 0) {
 #ifdef USE_DEVTREE
 			drm_dev->subdev[i].irqno = of_irq_get(dev_node,
 							      subdev_phys_idx[i]);

@@ -510,10 +510,10 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 	}
 	/*pr_info(DRM_DEV_NAME ">>>\n");
 	  for (i = 0; i < (cmd_size >> 2); ++i)
-	  pr_info(DRM_DEV_NAME ": %u: %08X\n", i << 2, cmd_buf[i]);
+	  	pr_info(DRM_DEV_NAME ": %u: %08X\n", i << 2, cmd_buf[i]);
 	  pr_info(DRM_DEV_NAME "<<<\n");*/
 	/*if (conv->run[0].lrn)
-	  pr_info(DRM_DEV_NAME ": LRN tiles: %dx%dx%d: %d\n",
+	  	pr_info(DRM_DEV_NAME ": LRN tiles: %dx%dx%d: %d\n",
 	  (int)conv->input.w, (int)conv->input.h, (int)conv->input.c,
 	  (int)conv->input.tiles);*/
 	cmb_node->size += cmd_size;
@@ -716,7 +716,7 @@ static int dv_convert_fc_v0(struct device *dev, struct dmp_cmb *cmb,
 			if (!quant_base) {
 				pr_err(DRM_DEV_NAME ": dma_buf_kmap() failed\n");
 				dma_buf_end_cpu_access(dma_buf,
-							DMA_BIDIRECTIONAL);
+						       DMA_BIDIRECTIONAL);
 				dma_buf_put(dma_buf);
 				return -ENOMEM;
 			}
@@ -1057,7 +1057,7 @@ static int dv_convert_maximizer_v0(struct device *dev, struct dmp_cmb *cmb,
 	num_pixel = (uint32_t)cmd.width * (uint32_t)cmd.height;
 	block_size = num_pixel * (cmd.nclass > 8 ? 8 : cmd.nclass) * 2;
 	last_block_src = (in_base_addr + num_pixel * cmd.nclass);
-	if (last_block_src % block_size != 0){
+	if (last_block_src % block_size != 0) {
 		last_block_src -= last_block_src % block_size;
 	}
 	cmd_buf[i++] = 0x24;
@@ -1079,7 +1079,7 @@ static int dv_convert_maximizer_v0(struct device *dev, struct dmp_cmb *cmb,
 }
 
 int dv_convert_maximizer_command(struct device *dev, struct dmp_cmb *cmb,
-				struct dmp_dv_kcmd *cmd_info)
+				 struct dmp_dv_kcmd *cmd_info)
 {
 	int i;
 	int ret = 0;
@@ -1094,8 +1094,8 @@ int dv_convert_maximizer_command(struct device *dev, struct dmp_cmb *cmb,
 			return -EFAULT;
 		switch (cmd.version) {
 		case 0:
-			ret = dv_convert_maximizer_v0(dev,
-					cmb, user_cmds, cmd.size);
+			ret = dv_convert_maximizer_v0(dev, cmb, user_cmds,
+						      cmd.size);
 			if (ret)
 				return ret;
 			break;
