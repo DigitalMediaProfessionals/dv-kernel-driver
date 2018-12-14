@@ -118,7 +118,7 @@ static struct dmp_cmb_list_entry *dv_cmb_allocate(struct device *dev)
 
 	do {
 		cmb->logical = dma_alloc_coherent(dev, alloc_size,
-			&cmb->physical, GFP_KERNEL);
+						  &cmb->physical, GFP_KERNEL);
 		alloc_size >>= 1;
 	} while (!cmb->logical && alloc_size >= PAGE_SIZE);
 	if (!cmb->logical) {
@@ -163,7 +163,7 @@ void dv_cmb_finalize(struct device *dev, struct dmp_cmb *cmb)
 
 	list_for_each_entry_safe(lobj, ltmp, &cmb->cmb_list, list_node) {
 		dma_free_coherent(dev, lobj->capacity, lobj->logical,
-			lobj->physical);
+				  lobj->physical);
 		list_del(&lobj->list_node);
 		kfree(lobj);
 	}
@@ -257,8 +257,8 @@ static int get_dma_addr(struct device *dev, struct dmp_cmb *cmb,
 			break;
 		}
 		else {
-		    *addr = obj->dma_addr + (uint32_t)buf->offs;
-		    *buf_size = obj->buf_size - (uint32_t)buf->offs;
+			*addr = obj->dma_addr + (uint32_t)buf->offs;
+			*buf_size = obj->buf_size - (uint32_t)buf->offs;
 		}
 	}
 
@@ -282,7 +282,7 @@ static size_t conf_size(unsigned int topo)
 {
 	unsigned int n = topo_num_runs(topo);
 	return sizeof(struct conv_configuration) -
-	       (MAX_NUM_RUNS - n) * sizeof(struct conv_run);
+			(MAX_NUM_RUNS - n) * sizeof(struct conv_run);
 }
 
 /**************************************
@@ -291,7 +291,8 @@ static size_t conf_size(unsigned int topo)
  *
  **************************************/
 static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
-			      struct dmp_dv_kcmdraw __user *user_cmd, size_t size)
+			      struct dmp_dv_kcmdraw __user *user_cmd,
+			      size_t size)
 {
 	struct dmp_cmb_list_entry *cmb_node;
 	struct dmp_dv_kcmdraw_conv_v0 *cmd;
@@ -309,7 +310,7 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 
 	// there should be at least one run
 	if (size < sizeof(struct dmp_dv_kcmdraw_conv_v0) - 31 *
-	    sizeof(struct dmp_dv_kcmdraw_conv_v0_run)) {
+			sizeof(struct dmp_dv_kcmdraw_conv_v0_run)) {
 		pr_warn(DRM_DEV_NAME ": Command size is too small: %zu < %zu\n",
 			size, sizeof(struct dmp_dv_kcmdraw_conv_v0) - 31 *
 			sizeof(struct dmp_dv_kcmdraw_conv_v0_run));
@@ -323,13 +324,14 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 	}
 	if (copy_from_user(cmd, user_cmd, size)) {
 		kfree(cmd);
-		pr_warn(DRM_DEV_NAME ": copy_from_user() failed for %zu bytes\n", size);
+		pr_warn(DRM_DEV_NAME ": copy_from_user() failed for %zu bytes\n",
+			size);
 		return -EFAULT;
 	}
 
 	runs = topo_num_runs(cmd->topo);
 	if (size < sizeof(struct dmp_dv_kcmdraw_conv_v0) - (32 - runs) *
-	    sizeof(struct dmp_dv_kcmdraw_conv_v0_run)) {
+			sizeof(struct dmp_dv_kcmdraw_conv_v0_run)) {
 		kfree(cmd);
 		pr_warn(DRM_DEV_NAME ": Invalid runs=%u\n", runs);
 		return -EINVAL;
@@ -399,11 +401,13 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 	if (!conv->input.tiles) {
 		kfree(cmd);
 		pr_warn(DRM_DEV_NAME ": Could not determine tiles for: %dx%dx%d\n",
-			(int)conv->input.w, (int)conv->input.h, (int)conv->input.c);
+			(int)conv->input.w, (int)conv->input.h,
+			(int)conv->input.c);
 		return -EINVAL;
 	}
 	/*pr_info(DRM_DEV_NAME ": tiles=%d for %dx%dx%d\n",
-		(int)conv->input.tiles, (int)conv->input.w, (int)conv->input.h, (int)conv->input.c);*/
+	  	  (int)conv->input.tiles, (int)conv->input.w,
+		  (int)conv->input.h, (int)conv->input.c);*/
 	if (conv->input.tiles != 1)
 		valid_multi_run = 0;
 
@@ -418,7 +422,7 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 		if (!py)
 			py = px;
 		if ((px < 1) || (py < 1) || (px > MAX_CONV_KERNEL_SIZE) ||
-		    (py > MAX_CONV_KERNEL_SIZE)) {
+				(py > MAX_CONV_KERNEL_SIZE)) {
 			kfree(cmd);
 			pr_warn(DRM_DEV_NAME ": Invalid kernel size %dx%d\n",
 				px, py);
@@ -438,7 +442,7 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 			return ret;
 		}
 		if (weight_base_addr != 0xDEADBEEF &&
-		    weight_buf_size < weight_size) {
+				weight_buf_size < weight_size) {
 			kfree(cmd);
 			pr_warn(DRM_DEV_NAME ": got weights buffer size %u while expected %u\n",
 				weight_buf_size, weight_size);
@@ -464,18 +468,22 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 		conv->run[i].rectifi_en = cmd->run[i].rectifi_en;
 		conv->run[i].lrn = cmd->run[i].lrn;
 
-		if ((conv->run[i].lrn & 1) && ((conv->run[i].conv_enable) || (conv->run[i].pool_enable) || (conv->header.topo != 1))) {
+		if ((conv->run[i].lrn & 1) && ((conv->run[i].conv_enable)
+			|| (conv->run[i].pool_enable)
+			|| (conv->header.topo != 1))) {
 			kfree(cmd);
 			pr_warn(DRM_DEV_NAME ": LRN must be a standalone layer\n");
 			return -EINVAL;
 		}
 
-		if ((cmd->z > 1) || (cmd->run[i].pz > 1) || (cmd->run[i].conv_dilation))  // TODO: add more checks: no maxpool_with_argmax, no unpool_with_argmax.
+		if ((cmd->z > 1)
+			|| (cmd->run[i].pz > 1)
+			|| (cmd->run[i].conv_dilation))  // TODO: add more checks: no maxpool_with_argmax, no unpool_with_argmax.
 			valid_multi_run = 0;
 	}
 	if (output_buf_size < total_output_size ||
-	    (eltwise_base_addr != 0xDEADBEEF &&
-	     eltwise_buf_size < total_output_size)) {
+			(eltwise_base_addr != 0xDEADBEEF &&
+			 eltwise_buf_size < total_output_size)) {
 		kfree(cmd);
 		pr_warn(DRM_DEV_NAME ": got eltwise buffer size %u while expected %u\n",
 			eltwise_buf_size, total_output_size);
@@ -484,15 +492,19 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 	if (cmd->topo != 1) {
 		if (!valid_multi_run) {
 			pr_warn(DRM_DEV_NAME ": Configuration %dx%dx%d z=%d cannot be executed with multiple runs\n",
-				(int)conv->input.w, (int)conv->input.h, (int)conv->input.c, (int)conv->input.z);
+				(int)conv->input.w, (int)conv->input.h,
+				(int)conv->input.c, (int)conv->input.z);
 			kfree(cmd);
 			return -EINVAL;
 		}
-		ubuf_size = ubuf_get_single_tile_usage((struct dmp_dv_kcmdraw_conv_v0*)cmd, UNIFIED_BUFFER_SIZE);
+		ubuf_size = ubuf_get_single_tile_usage(
+				(struct dmp_dv_kcmdraw_conv_v0*)cmd,
+				UNIFIED_BUFFER_SIZE);
 		if (ubuf_size > UNIFIED_BUFFER_SIZE) {
 			kfree(cmd);
 			pr_warn(DRM_DEV_NAME ": Configuration %dx%dx%d requires unified buffer of size %d\n",
-				(int)conv->input.w, (int)conv->input.h, (int)conv->input.c, (int)ubuf_size);
+				(int)conv->input.w, (int)conv->input.h,
+				(int)conv->input.c, (int)ubuf_size);
 			return -EINVAL;
 		}
 	}
@@ -501,9 +513,9 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 		pr_info(DRM_DEV_NAME ": %u: %08X\n", i << 2, cmd_buf[i]);
 	pr_info(DRM_DEV_NAME "<<<\n");*/
 	/*if (conv->run[0].lrn)
-		pr_info(DRM_DEV_NAME ": LRN tiles: %dx%dx%d: %d\n",
-			(int)conv->input.w, (int)conv->input.h, (int)conv->input.c,
-			(int)conv->input.tiles);*/
+	  	pr_info(DRM_DEV_NAME ": LRN tiles: %dx%dx%d: %d\n",
+	(int)conv->input.w, (int)conv->input.h, (int)conv->input.c,
+	(int)conv->input.tiles);*/
 	cmb_node->size += cmd_size;
 
 	kfree(cmd);
@@ -534,11 +546,11 @@ int dv_convert_conv_command(struct device *dev, struct dmp_cmb *cmb,
 			break;
 		default:
 			pr_warn(DRM_DEV_NAME ": Invalid CONV command version: %u\n",
-			        cmd.version);
+				cmd.version);
 			return -EINVAL;
 		}
 		user_cmds = (struct dmp_dv_kcmdraw __user *)
-			((uint8_t*)user_cmds + cmd.size);
+				((uint8_t*)user_cmds + cmd.size);
 	}
 
 	return ret;
@@ -553,7 +565,7 @@ void dv_run_conv_command(struct dmp_cmb *cmb, void *bar_logical)
 
 	list_for_each_entry(cmb_node, &cmb->cmb_list, list_node) {
 		cmd_buf = (uint32_t *)((uint8_t *)cmb_node->logical +
-			  cmb_node->size);
+					cmb_node->size);
 		if (prev_size == 0) {
 			cmd_buf[0] = 0x0108f004; // Write one word to 0x108
 			cmd_buf[1] = 0x00000001; // Set interrupt register
@@ -577,7 +589,8 @@ void dv_run_conv_command(struct dmp_cmb *cmb, void *bar_logical)
 }
 
 static int dv_convert_fc_v0(struct device *dev, struct dmp_cmb *cmb,
-			    struct dmp_dv_kcmdraw __user *user_cmd, size_t size)
+			    struct dmp_dv_kcmdraw __user *user_cmd,
+			    size_t size)
 {
 	struct dmp_cmb_list_entry *cmb_node;
 	struct dmp_dv_kcmdraw_fc_v0 cmd;
@@ -702,13 +715,16 @@ static int dv_convert_fc_v0(struct device *dev, struct dmp_cmb *cmb,
 			quant_base = dma_buf_kmap(dma_buf, ++page_num);
 			if (!quant_base) {
 				pr_err(DRM_DEV_NAME ": dma_buf_kmap() failed\n");
-				dma_buf_end_cpu_access(dma_buf, DMA_BIDIRECTIONAL);
+				dma_buf_end_cpu_access(dma_buf,
+						       DMA_BIDIRECTIONAL);
 				dma_buf_put(dma_buf);
 				return -ENOMEM;
 			}
 			quant = ((__u16*)quant_base) - n;
 			for (; i < 256; i++) {
-				cmd_buf[15 + i] = (0x21 << 24) | (i << 16) | quant[i];
+				cmd_buf[15 + i] = (0x21 << 24)
+						| (i << 16)
+						| quant[i];
 			}
 			dma_buf_kunmap(dma_buf, page_num, quant_base);
 		}
@@ -747,7 +763,7 @@ int dv_convert_fc_command(struct device *dev, struct dmp_cmb *cmb,
 			return -EINVAL;
 		}
 		user_cmds = (struct dmp_dv_kcmdraw __user *)
-			((uint8_t*)user_cmds + cmd.size);
+				((uint8_t*)user_cmds + cmd.size);
 	}
 
 	return ret;
@@ -762,7 +778,7 @@ void dv_run_fc_command(struct dmp_cmb *cmb, void *bar_logical)
 
 	list_for_each_entry(cmb_node, &cmb->cmb_list, list_node) {
 		cmd_buf = (uint32_t *)((uint8_t *)cmb_node->logical +
-			  cmb_node->size);
+					cmb_node->size);
 		if (prev_size == 0) {
 			cmd_buf[0] = 0x0008f004; // Write one word to 0x8
 			cmd_buf[1] = 0x00000001; // Set interrupt register
@@ -788,13 +804,13 @@ void dv_run_fc_command(struct dmp_cmb *cmb, void *bar_logical)
 static uint32_t dv_ipu_v0_get_cmb_size(const struct dmp_dv_kcmdraw_ipu_v0 *cmd)
 {
 	uint32_t nreg = 10;
-	if(cmd->use_tex) {
+	if (cmd->use_tex) {
 		nreg += 6;
 	}
-	if(cmd->use_rd) {
+	if (cmd->use_rd) {
 		nreg += 2;
 	}
-	if(cmd->fmt_tex == 7 && cmd->use_tex != 0) {
+	if (cmd->fmt_tex == 7 && cmd->use_tex != 0) {
 		nreg += cmd->ncolor_lut;
 	}
 	return sizeof(uint32_t) * 2 * nreg;
@@ -813,14 +829,14 @@ static uint32_t dv_convert_ipu_v0_fill_cmb(
 	uint32_t i = 0;
 	uint32_t tex_dim = (cmd->tex_width << 16) | cmd->tex_height;
 	uint32_t swizzle = ((uint32_t)(cmd->ridx & 0x3) << 6) 
-				| ((uint32_t)(cmd->gidx & 0x3) << 4)
-				| ((uint32_t)(cmd->bidx & 0x3) << 2) 
-				| (uint32_t)(cmd->aidx & 0x3);
+			| ((uint32_t)(cmd->gidx & 0x3) << 4)
+			| ((uint32_t)(cmd->bidx & 0x3) << 2) 
+			| (uint32_t)(cmd->aidx & 0x3);
 	uint32_t fmt_and_flag = (((uint32_t)cmd->alpha & 0xff) << 24) 
-				| ((uint32_t)cmd->use_const_alpha ? 0x10 : 0)
-				| ((uint32_t)cmd->use_rd ? 0x8 : 0) 
-				| (((uint32_t)cmd->fmt_wr & 0x3) << 1) 
-				| ((uint32_t)cmd->fmt_rd & 0x1);
+			| ((uint32_t)cmd->use_const_alpha ? 0x10 : 0)
+			| ((uint32_t)cmd->use_rd ? 0x8 : 0) 
+			| (((uint32_t)cmd->fmt_wr & 0x3) << 1) 
+			| ((uint32_t)cmd->fmt_rd & 0x1);
 	uint32_t cnv = 0;
 	switch(cmd->cnv_type) {
 	case 0:
@@ -834,7 +850,7 @@ static uint32_t dv_convert_ipu_v0_fill_cmb(
 	default:
 		break;
 	}
-	
+
 	cmd_buf[i++] = 0x0024; // Write to 0x24
 	cmd_buf[i++] = (cmd->rect_width << 16) | cmd->rect_height;
 	cmd_buf[i++] = 0x00c0; // Write to 0xc0
@@ -845,7 +861,7 @@ static uint32_t dv_convert_ipu_v0_fill_cmb(
 	cmd_buf[i++] = cmd->scale_width;
 	cmd_buf[i++] = 0x0100; // Write to 0x100
 	cmd_buf[i++] = cmd->use_tex ? 0x00ff0002 : 0;
-	if(cmd->use_tex) {
+	if (cmd->use_tex) {
 		cmd_buf[i++] = 0x0154; // Write to 0x154
 		cmd_buf[i++] = tex_base_addr;
 		cmd_buf[i++] = 0x0158; // Write to 0x158
@@ -859,7 +875,7 @@ static uint32_t dv_convert_ipu_v0_fill_cmb(
 		cmd_buf[i++] = 0x015c; // Write to 0x15c
 		cmd_buf[i++] = 1; // 1 = LL, 0 = UL
 	}
-	if(cmd->use_rd) {
+	if (cmd->use_rd) {
 		cmd_buf[i++] = 0x0280; // Write to 0x280
 		cmd_buf[i++] = rd_base_addr;
 		cmd_buf[i++] = 0x0288; // Write to 0x288
@@ -873,7 +889,7 @@ static uint32_t dv_convert_ipu_v0_fill_cmb(
 	cmd_buf[i++] = fmt_and_flag; // rdFmt, wrFmt, rdEn, faEn, alpha
 	cmd_buf[i++] = 0x0298; // Write to 0x298
 	cmd_buf[i++] = cnv; // conversion to fp16
-	if(cmd->fmt_tex == 7 && cmd->use_tex != 0) {
+	if (cmd->fmt_tex == 7 && cmd->use_tex != 0) {
 		for(j = 0; j < cmd->ncolor_lut; j++) {
 			cmd_buf[i++] = 0x01f0; // Write to 0x01f0
 			cmd_buf[i++] = cmd->lut[j];
@@ -881,13 +897,14 @@ static uint32_t dv_convert_ipu_v0_fill_cmb(
 	}
 	cmd_buf[i++] = 0x0; // end
 	cmd_buf[i++] = 0; // end
-	
+
 	return i;
 }
 
 // If already a command is converted and not executed yet, -EBUSY is returned.
 static int dv_convert_ipu_v0(struct device *dev, struct dmp_cmb *cmb,
-			    struct dmp_dv_kcmdraw __user *user_cmd, size_t size)
+			     struct dmp_dv_kcmdraw __user *user_cmd,
+			     size_t size)
 {
 	struct dmp_cmb_list_entry *cmb_node;
 	struct dmp_dv_kcmdraw_ipu_v0 cmd;
@@ -897,8 +914,9 @@ static int dv_convert_ipu_v0(struct device *dev, struct dmp_cmb *cmb,
 	uint32_t rd_base_addr = 0, rd_buf_size;
 	uint32_t wr_base_addr = 0, wr_buf_size;
 	int ret;
-	
-	cmb_node = list_first_entry(&cmb->cmb_list, struct dmp_cmb_list_entry, list_node);
+
+	cmb_node = list_first_entry(&cmb->cmb_list, struct dmp_cmb_list_entry,
+				    list_node);
 	if (cmb_node->size != 0)
 		return -EBUSY;
 	if (size < sizeof(struct dmp_dv_kcmdraw_ipu_v0))
@@ -907,23 +925,24 @@ static int dv_convert_ipu_v0(struct device *dev, struct dmp_cmb *cmb,
 		return -EFAULT;
 
 	// prep buffer 
-	ret = get_dma_addr(dev, cmb, &cmd.wr, &wr_base_addr,
-			   &wr_buf_size);
+	ret = get_dma_addr(dev, cmb, &cmd.wr, &wr_base_addr, &wr_buf_size);
 	if (ret)
 		return ret;
-	if(cmd.use_tex) {
-		ret = get_dma_addr(dev, cmb, &cmd.tex, &tex_base_addr, &tex_buf_size);
+	if (cmd.use_tex) {
+		ret = get_dma_addr(dev, cmb, &cmd.tex,
+				   &tex_base_addr, &tex_buf_size);
 		if (ret)
 			return ret;
 		cmd_size += sizeof(uint32_t) * 6;
 	}
-	if(cmd.use_rd) {
-		ret = get_dma_addr(dev, cmb, &cmd.rd, &rd_base_addr, &rd_buf_size);
+	if (cmd.use_rd) {
+		ret = get_dma_addr(dev, cmb, &cmd.rd,
+				   &rd_base_addr, &rd_buf_size);
 		if (ret)
 			return ret;
 		cmd_size += sizeof(uint32_t) * 4;
 	}
-	
+
 	// new cmb is the size is smaller
 	cmd_size = dv_ipu_v0_get_cmb_size(&cmd);
 	if (cmb_node->size + cmd_size + 8 > cmb_node->capacity) {
@@ -933,15 +952,16 @@ static int dv_convert_ipu_v0(struct device *dev, struct dmp_cmb *cmb,
 		list_add(&cmb_node->list_node, &cmb->cmb_list);
 	}
 	cmd_buf = (uint32_t*)((uint8_t*)(cmb_node->logical) + cmb_node->size);
-	
-	cmb_node->size += dv_convert_ipu_v0_fill_cmb(&cmd, cmd_buf, 
+
+	cmb_node->size += dv_convert_ipu_v0_fill_cmb(
+				&cmd, cmd_buf, 
 				cmb_node->capacity - cmb_node->size,
 				tex_base_addr, rd_base_addr, wr_base_addr);
 	return 0;
 }
 
 int dv_convert_ipu_command(struct device *dev, struct dmp_cmb *cmb,
-			  struct dmp_dv_kcmd *cmd_info)
+			   struct dmp_dv_kcmd *cmd_info)
 {
 	int i;
 	int ret = 0;
@@ -965,7 +985,7 @@ int dv_convert_ipu_command(struct device *dev, struct dmp_cmb *cmb,
 			return -EINVAL;
 		}
 		user_cmds = (struct dmp_dv_kcmdraw __user *)
-			((uint8_t*)user_cmds + cmd.size);
+				((uint8_t*)user_cmds + cmd.size);
 	}
 
 	return ret;
@@ -978,9 +998,10 @@ void dv_run_ipu_command(struct dmp_cmb *cmb, void *bar_logical)
 	uint32_t offset;
 	uint32_t val;
 
-	cmb_node = list_first_entry(&cmb->cmb_list, struct dmp_cmb_list_entry, list_node);
+	cmb_node = list_first_entry(&cmb->cmb_list, struct dmp_cmb_list_entry,
+				    list_node);
 	cmd = (uint32_t *)(cmb_node->logical);
-	while(*cmd) {
+	while (*cmd) {
 		offset = *cmd;
 		cmd++;
 		val = *cmd;
@@ -988,4 +1009,123 @@ void dv_run_ipu_command(struct dmp_cmb *cmb, void *bar_logical)
 		iowrite32(val, REG_IO_ADDR(bar_logical, offset));
 	}
 	iowrite32(0x1, REG_IO_ADDR(bar_logical, 0x02a0));
+}
+
+// If already a command is converted and not executed yet, -EBUSY is returned.
+static int dv_convert_maximizer_v0(struct device *dev, struct dmp_cmb *cmb,
+				   struct dmp_dv_kcmdraw __user *user_cmd,
+				   size_t size)
+{
+	struct dmp_cmb_list_entry *cmb_node;
+	struct dmp_dv_kcmdraw_maximizer_v0 cmd;
+	size_t cmd_size = sizeof(uint32_t) * 2 * 8;
+	uint32_t *cmd_buf;
+	uint32_t in_base_addr = 0, in_sz;
+	uint32_t out_base_addr = 0, out_sz;
+	uint32_t num_pixel;
+	uint32_t block_size;
+	uint32_t last_block_src;
+	int i = 0;
+	int ret;
+
+	cmb_node = list_first_entry(&cmb->cmb_list, struct dmp_cmb_list_entry,
+				    list_node);
+	if (cmb_node->size != 0)
+		return -EBUSY;
+	if (size < sizeof(struct dmp_dv_kcmdraw_maximizer_v0))
+		return -EINVAL;
+	if (copy_from_user(&cmd, user_cmd, size))
+		return -EFAULT;
+
+	ret = get_dma_addr(dev, cmb, &cmd.input_buf, &in_base_addr, &in_sz);
+	if (ret)
+		return ret;
+	ret = get_dma_addr(dev, cmb, &cmd.output_buf, &out_base_addr, &out_sz);
+	if (ret)
+		return ret;
+
+	// new cmb is the size is smaller
+	if (cmb_node->size + cmd_size + 8 > cmb_node->capacity) {
+		cmb_node = dv_cmb_allocate(dev);
+		if (!cmb_node)
+			return -ENOMEM;
+		list_add(&cmb_node->list_node, &cmb->cmb_list);
+	}
+	cmd_buf = (uint32_t*)((uint8_t*)(cmb_node->logical) + cmb_node->size);
+
+	// fill cmb
+	num_pixel = (uint32_t)cmd.width * (uint32_t)cmd.height;
+	block_size = num_pixel * (cmd.nclass > 8 ? 8 : cmd.nclass) * 2;
+	last_block_src = (in_base_addr + num_pixel * cmd.nclass);
+	if (last_block_src % block_size != 0) {
+		last_block_src -= last_block_src % block_size;
+	}
+	cmd_buf[i++] = 0x24;
+	cmd_buf[i++] = ((uint32_t)cmd.nclass << 24) | (num_pixel & 0xffffff);
+	cmd_buf[i++] = 0x28;
+	cmd_buf[i++] = in_base_addr;
+	cmd_buf[i++] = 0x2C;
+	cmd_buf[i++] = out_base_addr;
+	cmd_buf[i++] = 0x30;
+	cmd_buf[i++] = block_size;
+	cmd_buf[i++] = 0x34;
+	cmd_buf[i++] = (num_pixel % 128) * 2 * (cmd.nclass % 8);
+	cmd_buf[i++] = 0x38;
+	cmd_buf[i++] = last_block_src;
+	cmd_buf[i++] = 0;
+	cmd_buf[i++] = 0;
+
+	return 0;
+}
+
+int dv_convert_maximizer_command(struct device *dev, struct dmp_cmb *cmb,
+				 struct dmp_dv_kcmd *cmd_info)
+{
+	int i;
+	int ret = 0;
+	struct dmp_dv_kcmdraw __user *user_cmds;
+	struct dmp_dv_kcmdraw cmd;
+
+	user_cmds = u64_to_user_ptr(cmd_info->cmd_pointer);
+
+	for (i = 0; i < cmd_info->cmd_num; ++i) {
+		// get size and version first;
+		if (copy_from_user(&cmd, user_cmds, sizeof(cmd)))
+			return -EFAULT;
+		switch (cmd.version) {
+		case 0:
+			ret = dv_convert_maximizer_v0(dev, cmb, user_cmds,
+						      cmd.size);
+			if (ret)
+				return ret;
+			break;
+		default:
+			pr_err(DRM_DEV_NAME ": Invalid command version.\n");
+			return -EINVAL;
+		}
+		user_cmds = (struct dmp_dv_kcmdraw __user *)
+				((uint8_t*)user_cmds + cmd.size);
+	}
+
+	return ret;
+}
+
+void dv_run_maximizer_command(struct dmp_cmb *cmb, void *bar_logical)
+{
+	struct dmp_cmb_list_entry *cmb_node;
+	uint32_t *cmd; // in cmd buffer
+	uint32_t offset;
+	uint32_t val;
+
+	cmb_node = list_first_entry(&cmb->cmb_list, struct dmp_cmb_list_entry,
+				    list_node);
+	cmd = (uint32_t *)(cmb_node->logical);
+	while (*cmd) {
+		offset = *cmd;
+		cmd++;
+		val = *cmd;
+		cmd++;
+		iowrite32(val, REG_IO_ADDR(bar_logical, offset));
+	}
+	iowrite32(0x1, REG_IO_ADDR(bar_logical, 0x08));
 }
