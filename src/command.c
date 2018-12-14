@@ -571,6 +571,9 @@ void dv_run_conv_command(struct dmp_cmb *cmb, void *bar_logical)
 			cmd_buf[2] = 0;
 			prev_size += sizeof(uint32_t);
 		}
+#ifdef _TVGEN_
+		tvgen_mem_cmd("conv", cmb_node->logical, prev_addr, prev_size);
+#endif
 	}
 
 	barrier();
@@ -787,6 +790,9 @@ void dv_run_fc_command(struct dmp_cmb *cmb, void *bar_logical)
 			cmd_buf[2] = 0;
 			prev_size += sizeof(uint32_t);
 		}
+#ifdef _TVGEN_
+		tvgen_mem_cmd("fc", cmb_node->logical, prev_addr, prev_size);
+#endif
 	}
 
 	barrier();

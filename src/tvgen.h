@@ -43,5 +43,6 @@ void tvgen_end(void);
 void tvgen_w32(u32 value, u32 devid, u32 offset);
 void tvgen_w32_irq(u32 value, u32 devid);
 void tvgen_add_list(u32 value, u32 devid, u32 offset);
+void tvgen_mem_cmd(const char* name, void *logical, dma_addr_t physical, ssize_t size);
 
 #endif//_TVGEN_H

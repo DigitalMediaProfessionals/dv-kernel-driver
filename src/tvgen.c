@@ -68,6 +68,32 @@ static ssize_t file_write(struct file *file, const void* buf, ssize_t count)
     return 0;
 }
 
+static void write_phi_ocp(const char* fmt, ...)
+{
+  char buff[32];
+  va_list args;
+  int count;
+
+  va_start(args,fmt);
+  count = vsprintf(buff,fmt,args);
+  va_end(args);
+
+  file_write(file_phi_ocp, buff, count);
+}
+
+static void write_memdump(const char* fmt, ...)
+{
+  char buff[48];
+  va_list args;
+  int count;
+
+  va_start(args,fmt);
+  count = vsprintf(buff,fmt,args);
+  va_end(args);
+
+  file_write(file_memdump, buff, count);
+}
+
 /*    
 static void file_test(struct file* file)
 {
@@ -122,6 +148,16 @@ void tvgen_release(void)
     }
 }
 
+void tvgen_add_list(u32 value, u32 devid, u32 offset)
+{
+  struct list_data *data;
+  data = kmalloc(sizeof(struct list_data), GFP_KERNEL);
+  data->value = value;
+  data->devid = devid;
+  data->offset = offset;
+  list_add(&data->list, &head);
+}
+
 void tvgen_start(const char* path)
 {
     char* filename = (char*)kmalloc(PATH_MAX, GFP_KERNEL);
@@ -171,19 +207,6 @@ void tvgen_end(void)
     pr_debug(DRM_DEV_NAME": tvgen_close_ocp\n");
 }
 
-static void write_phi_ocp(const char* fmt, ...)
-{
-  char buff[32];
-  va_list args;
-  int count;
-
-  va_start(args,fmt);
-  count = vsprintf(buff,fmt,args);
-  va_end(args);
-
-  file_write(file_phi_ocp, buff, count);
-}
-
 // write to phi_ocp
 void tvgen_w32(u32 value, u32 devid, u32 offset)
 {
@@ -196,12 +219,21 @@ void tvgen_w32_irq(u32 value, u32 devid)
 		tvgen_dev_info[devid].bar_physical + tvgen_dev_info[devid].irq_addr, value);
 }
 
-void tvgen_add_list(u32 value, u32 devid, u32 offset)
+// write to dumpmem
+void tvgen_mem_cmd(const char* name, void *logical, dma_addr_t physical, ssize_t size)
 {
-  struct list_data *data;
-  data = kmalloc(sizeof(struct list_data), GFP_KERNEL);
-  data->value = value;
-  data->devid = devid;
-  data->offset = offset;
-  list_add(&data->list, &head);
+  u_char* bp = (u_char*)logical;
+
+  if(name) write_memdump("[%s]\n", name);
+  
+  while(size>0)
+    {
+      write_memdump("@%08llx %02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x\n",
+		    physical,
+		    bp[15],bp[14],bp[13],bp[12],bp[11],bp[10],bp[9],bp[8],
+		    bp[7],bp[6],bp[5],bp[4],bp[3],bp[2],bp[1],bp[0]);
+      physical += 16;
+      bp += 16;
+      size -= 16;
+    }
 }
