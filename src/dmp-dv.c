@@ -113,6 +113,10 @@ static irqreturn_t handle_int(int irq, void *dev_id)
 	spin_lock(&dev->int_exclusive);
 	iowrite32(0, REG_IO_ADDR(dev, dev->irq_addr));
 
+#ifdef _TVGEN_
+	tvgen_phi_ocp_a(0, dev->bar_physical + dev->irq_addr);
+#endif
+
 	++dev->hw_id;
 	wake_up_interruptible(&dev->wait_queue);
 	spin_unlock(&dev->int_exclusive);
@@ -757,9 +761,7 @@ static int drm_dev_probe(struct platform_device *pdev)
 			drm_dev->subdev[i].hw_id = 0;
 		}
 #ifdef _TVGEN_
-		tvgen_dev_info[i].bar_physical = drm_dev->subdev[i].bar_physical;
-		tvgen_dev_info[i].reg_offset = reg_offset[i];
-		tvgen_dev_info[i].irq_addr = irq_addr[i];
+		tvgen_bar_physical[i] = drm_dev->subdev[i].bar_physical;
 #endif
 	}
 
@@ -770,7 +772,7 @@ static int drm_dev_probe(struct platform_device *pdev)
 	if (subdev_phys_idx[0] >= 0) {
 		iowrite32(1, REG_IO_ADDR((&drm_dev->subdev[0]), 0x40C));
 #ifdef _TVGEN_
-		tvgen_add_list(1, 0, 0x40C);
+		tvgen_add_init(1, 0, 0x40C);
 #endif
 
 		// Get unified buffer size from register
@@ -784,7 +786,7 @@ static int drm_dev_probe(struct platform_device *pdev)
 	  {
 		iowrite32(1, REG_IO_ADDR((&drm_dev->subdev[1]), 0x28));
 #ifdef _TVGEN_
-		tvgen_add_list(1, 1, 0x28);
+		tvgen_add_init(1, 1, 0x28);
 #endif
 	  }
 
@@ -793,7 +795,7 @@ static int drm_dev_probe(struct platform_device *pdev)
 	  {
 		iowrite32(1, REG_IO_ADDR((&drm_dev->subdev[0]), 0x44));
 #ifdef _TVGEN_
-		tvgen_add_list(1, 0, 0x44);
+		tvgen_add_init(1, 0, 0x44);
 #endif
 	  }
 

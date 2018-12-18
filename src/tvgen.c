@@ -19,19 +19,23 @@
 #include <linux/fs.h>
 #include <linux/uaccess.h>
 #include <linux/mm.h>
+#include <linux/dma-buf.h>
 
-#include "tvgen.h"
 #include "dmp-dv.h"
+#include "../uapi/dmp_dv_cmdraw_v0.h"
+#include "tvgen.h"
 
-tvgen_dev tvgen_dev_info[DRM_NUM_SUBDEV];
+phys_addr_t tvgen_bar_physical[DRM_NUM_SUBDEV];
 
-struct list_head head;
-struct list_data {
+struct list_init {
   u32 value;
   u32 devid;
   u32 offset;
   struct list_head list;
 };
+static struct list_head head_init;
+static tvgen_buf buf_output;
+static int cmd_count;
 
 static struct file* file_phi_ocp = NULL;
 static struct file* file_memdump = NULL;
@@ -134,28 +138,28 @@ static void file_test(struct file* file)
 
 void tvgen_init(void)
 {
-  INIT_LIST_HEAD(&head);
+  INIT_LIST_HEAD(&head_init);
 }
 
 void tvgen_release(void)
 {
-  struct list_data *ltmp;
-  struct list_data *lobj;
-  list_for_each_entry_safe(lobj, ltmp, &head, list)
+  struct list_init *ltmp;
+  struct list_init *lobj;
+  list_for_each_entry_safe(lobj, ltmp, &head_init, list)
     {
       list_del(&lobj->list);
       kfree(lobj);
     }
 }
 
-void tvgen_add_list(u32 value, u32 devid, u32 offset)
+void tvgen_add_init(u32 value, u32 devid, u32 offset)
 {
-  struct list_data *data;
-  data = kmalloc(sizeof(struct list_data), GFP_KERNEL);
+  struct list_init *data;
+  data = kmalloc(sizeof(struct list_init), GFP_KERNEL);
   data->value = value;
   data->devid = devid;
   data->offset = offset;
-  list_add(&data->list, &head);
+  list_add(&data->list, &head_init);
 }
 
 void tvgen_start(const char* path)
@@ -163,6 +167,8 @@ void tvgen_start(const char* path)
     char* filename = (char*)kmalloc(PATH_MAX, GFP_KERNEL);
     
     pr_debug(DRM_DEV_NAME": tvgen_start %p\n", filename);
+
+    cmd_count = 0;
 
     if(file_phi_ocp) { file_close(file_phi_ocp); file_phi_ocp = NULL; }
     if(file_memdump) { file_close(file_memdump); file_memdump = NULL; }
@@ -190,13 +196,13 @@ void tvgen_start(const char* path)
     // write init sequence
     {
       struct list_head *list;
-      struct list_data *data;
-      list_for_each(list, &head)
+      struct list_init *data;
+      list_for_each(list, &head_init)
 	{
-	  data = list_entry(list, struct list_data, list);
-	  tvgen_w32(data->value, data->devid, data->offset);
+	  data = list_entry(list, struct list_init, list);
+	  tvgen_phi_ocp_i(data->value, data->devid, data->offset);
 	}
-    }	
+    }
 }
 
 void tvgen_end(void)
@@ -208,19 +214,18 @@ void tvgen_end(void)
 }
 
 // write to phi_ocp
-void tvgen_w32(u32 value, u32 devid, u32 offset)
+void tvgen_phi_ocp_i(u32 value, u32 devid, u32 offset)
 {
   write_phi_ocp("2_00_%08llx_f_%08x\n",
-		tvgen_dev_info[devid].bar_physical + offset, value);
+		tvgen_bar_physical[devid] + offset, value);
 }
-void tvgen_w32_irq(u32 value, u32 devid)
+void tvgen_phi_ocp_a(u32 value, u32 addr)
 {
-  write_phi_ocp("2_00_%08llx_f_%08x\n",
-		tvgen_dev_info[devid].bar_physical + tvgen_dev_info[devid].irq_addr, value);
+  write_phi_ocp("2_00_%08llx_f_%08x\n", addr, value);
 }
 
 // write to dumpmem
-void tvgen_mem_cmd(const char* name, void *logical, dma_addr_t physical, ssize_t size)
+void tvgen_mem_write(const char* name, void *logical, dma_addr_t physical, ssize_t size)
 {
   u_char* bp = (u_char*)logical;
 
@@ -236,4 +241,50 @@ void tvgen_mem_cmd(const char* name, void *logical, dma_addr_t physical, ssize_t
       bp += 16;
       size -= 16;
     }
+}
+
+void tvgen_mem_input(const struct dmp_dv_kbuf* buf, dma_addr_t physical, u64 size)
+{
+  struct dma_buf *dma_buf;
+  u8 *logical;
+
+  if(!cmd_count)
+    {
+      dma_buf = dma_buf_get(buf->fd);
+      dma_buf_begin_cpu_access(dma_buf, DMA_BIDIRECTIONAL);
+      logical = dma_buf_kmap_atomic(dma_buf, 0);
+
+      tvgen_mem_write("input", logical + buf->offs, physical, size);
+
+      dma_buf_kunmap_atomic(dma_buf, 0, logical);
+      dma_buf_end_cpu_access(dma_buf, DMA_BIDIRECTIONAL);
+      dma_buf_put(dma_buf);
+    }
+  cmd_count++;
+}
+
+void tvgen_mem_weight(const struct dmp_dv_kbuf* buf, dma_addr_t physical, u64 size)
+{
+  struct dma_buf *dma_buf;
+  u8 *logical;
+
+  if(!size) return;
+  
+  dma_buf = dma_buf_get(buf->fd);
+  dma_buf_begin_cpu_access(dma_buf, DMA_BIDIRECTIONAL);
+  logical = dma_buf_kmap(dma_buf, 0);
+
+  tvgen_mem_write("weight", logical + buf->offs, physical, size);
+
+  dma_buf_kunmap(dma_buf, 0, logical);
+  dma_buf_end_cpu_access(dma_buf, DMA_BIDIRECTIONAL);
+  dma_buf_put(dma_buf);
+}
+
+void tvgen_mem_output(const struct dmp_dv_kbuf* buf, dma_addr_t physical, u64 size)
+{
+  buf_output.fd = buf->fd;
+  buf_output.offs = buf->offs;
+  buf_output.physical = physical;
+  buf_output.size = size;
 }
