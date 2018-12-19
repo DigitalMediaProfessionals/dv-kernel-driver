@@ -29,14 +29,6 @@ enum TVGEN_DEV_ID {
 };
 extern phys_addr_t tvgen_bar_physical[];
 
-typedef struct
-{
-  s32 fd;
-  u64 offs;
-  size_t size;
-  dma_addr_t physical;
-} tvgen_buf;
-
 void tvgen_init(void);
 void tvgen_release(void);
 void tvgen_start(const char* path);
@@ -45,8 +37,8 @@ void tvgen_add_init(u32 value, u32 devid, u32 offset);
 void tvgen_phi_ocp_i(u32 value, u32 devid, u32 offset);
 void tvgen_phi_ocp_a(u32 value, u32 addr);
 void tvgen_mem_write(const char* name, void *logical, dma_addr_t physical, ssize_t size);
-void tvgen_mem_input(const struct dmp_dv_kbuf* buf, dma_addr_t physical, u64 size);
 void tvgen_mem_weight(const struct dmp_dv_kbuf* buf, dma_addr_t physical, u64 size);
+void tvgen_mem_input(const struct dmp_dv_kbuf* buf, dma_addr_t physical, u64 size);
 void tvgen_mem_output(const struct dmp_dv_kbuf* buf, dma_addr_t physical, u64 size);
 
 #endif//_TVGEN_H
