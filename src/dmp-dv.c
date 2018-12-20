@@ -265,6 +265,31 @@ static long drm_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			return -EFAULT;
 		ret = wait_cmd_id(dev_pri->dev, cmd_id);
 		break;
+
+#ifdef _TVGEN_
+	case DMP_DV_IOC_TVGEN_OPEN:
+	  if(arg)
+	    {
+	      char* path = (char*)kmalloc(PATH_MAX, GFP_KERNEL);
+	      int i;
+	      for(i=0; i<PATH_MAX; i++)
+		{
+		  if(get_user(path[i],(char*)(arg+i))) return -EFAULT;
+		  if(path[i] == '\0') break;
+		}
+	      tvgen_start(path);
+	      kfree(path);
+	    }
+	  else
+	    {
+	      tvgen_start(0); // default path
+	    }
+	  break;
+	case DMP_DV_IOC_TVGEN_CLOSE:
+	  tvgen_end();
+	  break;
+#endif
+
 	default:
 		break;
 	}
@@ -343,7 +368,6 @@ static ssize_t loop_control_store(struct device *dev,
 	if (ret < 0)
 		return ret;
 	iowrite32(loop_control, REG_IO_ADDR((&drm_dev->subdev[0]), 0x48));
-	pr_debug(DRM_DEV_NAME": loop_control_store\n");
 	return len;
 }
 
@@ -385,8 +409,6 @@ static ssize_t drm_firmware_write(struct file *filp, struct kobject *kobj,
 
 	pr_info(DRM_DEV_NAME ": Updating firmware 0x%04x..0x%04x.\n",
 		(unsigned int)pos, (unsigned int)(pos + count));
-
-	pr_debug(DRM_DEV_NAME": drm_firmware_write\n");
 
 	iowrite32(pos, REG_IO_ADDR(subdev, 0x80));
 	while (len--) {
@@ -761,7 +783,7 @@ static int drm_dev_probe(struct platform_device *pdev)
 			drm_dev->subdev[i].hw_id = 0;
 		}
 #ifdef _TVGEN_
-		tvgen_bar_physical[i] = drm_dev->subdev[i].bar_physical;
+		tvgen_set_physical(i, drm_dev->subdev[i].bar_physical);
 #endif
 	}
 
@@ -842,6 +864,11 @@ static int drm_dev_remove(struct platform_device *pdev)
 	struct drm_dev *drm_dev;
 	int i;
 
+#ifdef _TVGEN_
+	tvgen_end();
+	tvgen_release();
+#endif
+
 	dev_dbg(&pdev->dev, "remove begin\n");
 	drm_dev = platform_get_drvdata(pdev);
 
@@ -855,11 +882,6 @@ static int drm_dev_remove(struct platform_device *pdev)
 
 		platform_set_drvdata(pdev, NULL);
 	}
-
-#ifdef _TVGEN_
-	tvgen_end();
-	tvgen_release();
-#endif
 
 	dev_dbg(&pdev->dev, "remove successful\n");
 	return 0;

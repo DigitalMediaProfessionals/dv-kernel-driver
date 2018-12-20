@@ -19,20 +19,24 @@
 #define _TVGEN_H
 
 #define TVGEN_DEFAULT_FILE_PATH "/tmp"
+//#define TVGEN_DEFAULT_FILE_PATH "/mnt/dv"
+//#define TVGEN_DEFAULT_FILE_PATH "/media/card"
 #define TVGEN_PHI_OCP_FILENAME "/phi_ocp.txt"
 #define TVGEN_MEMDUMP_FILENAME "/memdump.txt"
+#define TVGEN_OUTPUT_FILENAME "/output.txt"
 
 enum TVGEN_DEV_ID {
   TVGEN_DEV_CONV =0,
   TVGEN_DEV_FC,
-  TVGEN_DEV_IPU
+  TVGEN_DEV_IPU,
+  TVGEN_DEV_MAX
 };
-extern phys_addr_t tvgen_bar_physical[];
 
 void tvgen_init(void);
 void tvgen_release(void);
 void tvgen_start(const char* path);
 void tvgen_end(void);
+void tvgen_set_physical(int idx, phys_addr_t addr);
 void tvgen_add_init(u32 value, u32 devid, u32 offset);
 void tvgen_phi_ocp_i(u32 value, u32 devid, u32 offset);
 void tvgen_phi_ocp_a(u32 value, u32 addr);

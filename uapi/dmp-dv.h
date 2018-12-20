@@ -70,4 +70,9 @@ struct dmp_dv_kcmd {
  */
 #define DMP_DV_IOC_WAIT _IOW(DMP_DV_IOC_MAGIC, 3, __u64)
 
+#ifdef _TVGEN_
+#define DMP_DV_IOC_TVGEN_OPEN _IOW(DMP_DV_IOC_MAGIC, 0x10, const char*)
+#define DMP_DV_IOC_TVGEN_CLOSE _IO(DMP_DV_IOC_MAGIC, 0x11)
+#endif
+
 #endif  // _UAPI_LINUX_DMP_DV_H

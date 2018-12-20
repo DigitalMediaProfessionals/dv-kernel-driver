@@ -29,7 +29,6 @@ phys_addr_t tvgen_bar_physical[DRM_NUM_SUBDEV];
 
 typedef struct
 {
-  int fd;
   struct dma_buf *dma_buf;
   dma_addr_t physical;
   u64 offs;
@@ -48,37 +47,39 @@ static struct list_head head_init;
 
 static struct file* file_phi_ocp = NULL;
 static struct file* file_memdump = NULL;
+static struct file* file_output = NULL;
 
 static struct file *file_open(const char *path)
 {
-    struct file *filp = NULL;
-    mm_segment_t oldfs;
-    int err = 0;
+  struct file *filp = NULL;
+  mm_segment_t oldfs;
+  int err = 0;
 
-    oldfs = get_fs();
-    set_fs(get_ds());
-    filp = filp_open(path, O_WRONLY | O_CREAT | O_TRUNC | O_LARGEFILE, 0644);
-    set_fs(oldfs);
-    if (IS_ERR(filp))
+  oldfs = get_fs();
+  set_fs(get_ds());
+  filp = filp_open(path, O_WRONLY | O_CREAT | O_TRUNC | O_LARGEFILE, 0644);
+  set_fs(oldfs);
+  if (IS_ERR(filp))
     {
-        err = PTR_ERR(filp);
-        return NULL;
+      err = PTR_ERR(filp);
+      return NULL;
     }
-    return filp;
+  return filp;
 }
 
 static void file_close(struct file *file)
 {
-    filp_close(file, NULL);
+  filp_close(file, NULL);
 }
 
 static ssize_t file_write(struct file *file, const void* buf, ssize_t count)
 {
-    if(file && buf && count)
+  if(file && buf && count)
     {
-        return kernel_write(file, buf, count, &file->f_pos);
+      return kernel_write(file, buf, count, &file->f_pos);
+      //return __kernel_write(file, buf, count, &file->f_pos);
     }
-    return 0;
+  return 0;
 }
 
 static void write_phi_ocp(const char* fmt, ...)
@@ -94,7 +95,7 @@ static void write_phi_ocp(const char* fmt, ...)
   file_write(file_phi_ocp, buff, count);
 }
 
-static void write_memdump(const char* fmt, ...)
+static void write_mem(struct file* file, const char* fmt, ...)
 {
   char buff[48];
   va_list args;
@@ -104,7 +105,7 @@ static void write_memdump(const char* fmt, ...)
   count = vsprintf(buff,fmt,args);
   va_end(args);
 
-  file_write(file_memdump, buff, count);
+  file_write(file, buff, count);
 }
 
 void tvgen_init(void)
@@ -124,6 +125,11 @@ void tvgen_release(void)
     }
 }
 
+void tvgen_set_physical(int idx, phys_addr_t addr)
+{
+  tvgen_bar_physical[idx % DRM_NUM_SUBDEV] = addr;
+}
+
 void tvgen_add_init(u32 value, u32 devid, u32 offset)
 {
   struct list_init *data;
@@ -136,54 +142,62 @@ void tvgen_add_init(u32 value, u32 devid, u32 offset)
 
 void tvgen_start(const char* path)
 {
-    char* filename = (char*)kmalloc(PATH_MAX, GFP_KERNEL);
-    
-    pr_debug(DRM_DEV_NAME": tvgen_start\n");
+  char* filename = (char*)kmalloc(PATH_MAX, GFP_KERNEL);
 
-    buf_input.dma_buf = 0;
-    buf_input.size = 0;
+  if(file_phi_ocp) { file_close(file_phi_ocp); file_phi_ocp = NULL; }
+  if(file_memdump) { file_close(file_memdump); file_memdump = NULL; }
+  if(file_output) { file_close(file_output); file_output = NULL; }
 
-    if(file_phi_ocp) { file_close(file_phi_ocp); file_phi_ocp = NULL; }
-    if(file_memdump) { file_close(file_memdump); file_memdump = NULL; }
+  buf_input.dma_buf = 0;
+  buf_input.size = 0;
+  buf_output.dma_buf = 0;
+  buf_output.size = 0;
 
-    strcpy(filename, path? path : TVGEN_DEFAULT_FILE_PATH);
-    strcat(filename, TVGEN_PHI_OCP_FILENAME);
-    file_phi_ocp = file_open(filename);
-    if(file_phi_ocp==NULL)
+  strcpy(filename, path? path : TVGEN_DEFAULT_FILE_PATH);
+  strcat(filename, TVGEN_PHI_OCP_FILENAME);
+  file_phi_ocp = file_open(filename);
+  if(file_phi_ocp==NULL)
     {
-        pr_err(DRM_DEV_NAME": file open error [%s]\n", filename);
+      pr_err(DRM_DEV_NAME": file open error [%s]\n", filename);
     }
-    pr_debug(DRM_DEV_NAME": phi_ocp [%s]\n", filename);
 
-    strcpy(filename, path? path : TVGEN_DEFAULT_FILE_PATH);
-    strcat(filename, TVGEN_MEMDUMP_FILENAME);
-    file_memdump = file_open(filename);
-    if(file_memdump==NULL)
+  strcpy(filename, path? path : TVGEN_DEFAULT_FILE_PATH);
+  strcat(filename, TVGEN_MEMDUMP_FILENAME);
+  file_memdump = file_open(filename);
+  if(file_memdump==NULL)
     {
-        pr_err(DRM_DEV_NAME": file open error [%s]\n", filename);
+      pr_err(DRM_DEV_NAME": file open error [%s]\n", filename);
     }
-    pr_debug(DRM_DEV_NAME": memdump [%s]\n", filename);
 
-    kfree(filename);
-
-    // write init sequence
+  strcpy(filename, path? path : TVGEN_DEFAULT_FILE_PATH);
+  strcat(filename, TVGEN_OUTPUT_FILENAME);
+  file_output = file_open(filename);
+  if(file_output==NULL)
     {
-      struct list_head *list;
-      struct list_init *data;
-      list_for_each(list, &head_init)
-	{
-	  data = list_entry(list, struct list_init, list);
-	  tvgen_phi_ocp_i(data->value, data->devid, data->offset);
-	}
+      pr_err(DRM_DEV_NAME": file open error [%s]\n", filename);
     }
+
+  kfree(filename);
+
+  // write init sequence
+  {
+    struct list_head *list;
+    struct list_init *data;
+    list_for_each(list, &head_init)
+      {
+	data = list_entry(list, struct list_init, list);
+	tvgen_phi_ocp_i(data->value, data->devid, data->offset);
+      }
+  }
 }
 
 void tvgen_end(void)
 {
-    if(file_phi_ocp) { file_close(file_phi_ocp); file_phi_ocp = NULL; }
-    if(file_memdump) { file_close(file_memdump); file_memdump = NULL; }
-
-    pr_debug(DRM_DEV_NAME": tvgen_close_ocp\n");
+  tvgen_mem_output(0,0,0);
+  
+  if(file_phi_ocp) { file_close(file_phi_ocp); file_phi_ocp = NULL; }
+  if(file_memdump) { file_close(file_memdump); file_memdump = NULL; }
+  if(file_output) { file_close(file_output); file_output = NULL; }
 }
 
 // write to phi_ocp
@@ -199,13 +213,14 @@ void tvgen_phi_ocp_a(u32 value, u32 addr)
 
 void tvgen_mem_write(const char* name, void *logical, dma_addr_t physical, ssize_t size)
 {
+  struct file* file = name? file_memdump : file_output;
   u32* mem = (u32*)logical;
 
-  if(name) write_memdump("[%s]\n", name);
+  if(name) write_mem(file,"[%s]\n", name);
   
   while(size>0)
     {
-      write_memdump("@%07llx %08x%08x%08x%08x\n", physical>>4, mem[3], mem[2], mem[1], mem[0]);
+      write_mem(file,"@%07llx %08x%08x%08x%08x\n", physical>>4, mem[3], mem[2], mem[1], mem[0]);
       mem += 4;
       physical += 16;
       size -= 16;
@@ -234,6 +249,7 @@ void tvgen_mem_input(const struct dmp_dv_kbuf* buf, dma_addr_t physical, u64 siz
 {
   if(buf && !buf_input.size)
     {
+      // first input buffer
       buf_input.dma_buf = dma_buf_get(buf->fd);
       buf_input.offs = buf->offs;
       buf_input.physical = physical;
@@ -258,5 +274,29 @@ void tvgen_mem_input(const struct dmp_dv_kbuf* buf, dma_addr_t physical, u64 siz
 
 void tvgen_mem_output(const struct dmp_dv_kbuf* buf, dma_addr_t physical, u64 size)
 {
-  // always update to get the last output
+  if(buf)
+    {
+      // always update to get the last output buffer
+      if(buf_output.dma_buf) dma_buf_put(buf_output.dma_buf);
+      
+      buf_output.dma_buf = dma_buf_get(buf->fd);
+      buf_output.offs = buf->offs;
+      buf_output.physical = physical;
+      buf_output.size = size;
+    }
+  else if(buf_output.dma_buf)
+    {
+      u8 *logical;
+      
+      dma_buf_begin_cpu_access(buf_output.dma_buf, DMA_BIDIRECTIONAL);
+      logical = dma_buf_kmap(buf_output.dma_buf, 0);
+
+      tvgen_mem_write(NULL, logical + buf_output.offs, buf_output.physical, buf_output.size);
+
+      dma_buf_kunmap(buf_output.dma_buf, 0, logical);
+      dma_buf_end_cpu_access(buf_output.dma_buf, DMA_BIDIRECTIONAL);
+      dma_buf_put(buf_output.dma_buf);
+
+      buf_output.dma_buf = 0;
+    }
 }

@@ -342,8 +342,6 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 	init_conv_input_size_v0(cmd, &conv_size);
 	ret = get_dma_addr(dev, cmb, &cmd->input_buf, &input_base_addr,
 			   &input_buf_size);
-	pr_debug(DRM_DEV_NAME": get_dma_addr conv input fd:%d offs:%llx %08x %x %x\n", cmd->input_buf.fd, cmd->input_buf.offs, input_base_addr, input_buf_size, conv_size.size);
-	
 	if (ret) {
 		kfree(cmd);
 		pr_warn(DRM_DEV_NAME ": get_dma_addr() failed for input\n");
@@ -357,7 +355,6 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 	}
 	ret = get_dma_addr(dev, cmb, &cmd->output_buf, &output_base_addr,
 			   &output_buf_size);
-	pr_debug(DRM_DEV_NAME": get_dma_addr conv output fd:%d offs:%llx %08x %x\n", cmd->output_buf.fd, cmd->output_buf.offs, output_base_addr, output_buf_size);
 	if (ret) {
 		kfree(cmd);
 		pr_warn(DRM_DEV_NAME ": get_dma_addr() failed for output\n");
@@ -365,7 +362,6 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 	}
 	ret = get_dma_addr(dev, cmb, &cmd->eltwise_buf, &eltwise_base_addr,
 			   &eltwise_buf_size);
-	pr_debug(DRM_DEV_NAME": get_dma_addr conv eltwise fd:%d offs:%llx %08x %x\n", cmd->eltwise_buf.fd, cmd->eltwise_buf.offs, eltwise_base_addr, eltwise_buf_size);
 	if (ret) {
 		kfree(cmd);
 		pr_warn(DRM_DEV_NAME ": get_dma_addr() failed for eltwise\n");
@@ -440,7 +436,6 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 		}
 		ret = get_dma_addr(dev, cmb, &cmd->run[i].weight_buf,
 				   &weight_base_addr, &weight_buf_size);
-		pr_debug(DRM_DEV_NAME": get_dma_addr conv weight run:%d fd:%d offs:%llx %08x %x %x\n", i, cmd->run[i].weight_buf.fd, cmd->run[i].weight_buf.offs, weight_base_addr, weight_buf_size, weight_size);
 		if (ret) {
 			kfree(cmd);
 			pr_warn(DRM_DEV_NAME ": get_dma_addr() failed for weights\n");
@@ -484,7 +479,6 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 		if ((cmd->z > 1) || (cmd->run[i].pz > 1) || (cmd->run[i].conv_dilation))  // TODO: add more checks: no maxpool_with_argmax, no unpool_with_argmax.
 			valid_multi_run = 0;
 	}
-	pr_debug(DRM_DEV_NAME": conv total_output_size:%08x\n", total_output_size);
 	if (output_buf_size < total_output_size ||
 	    (eltwise_base_addr != 0xDEADBEEF &&
 	     eltwise_buf_size < total_output_size)) {
@@ -635,14 +629,12 @@ static int dv_convert_fc_v0(struct device *dev, struct dmp_cmb *cmb,
 
 	ret = get_dma_addr(dev, cmb, &cmd.input_buf, &input_base_addr,
 			   &input_buf_size);
-	pr_debug(DRM_DEV_NAME": get_dma_addr fc input fd:%d offs:%llx %08x %x %x\n", cmd.input_buf.fd, cmd.input_buf.offs, input_base_addr, input_buf_size, cmd.input_size);
 	if (ret)
 		return ret;
 	if (input_buf_size < cmd.input_size * 2)
 		return -EINVAL;
 	ret = get_dma_addr(dev, cmb, &cmd.output_buf, &output_base_addr,
 			   &output_buf_size);
-	pr_debug(DRM_DEV_NAME": get_dma_addr fc output fd:%d offs:%llx %08x %x %x\n", cmd.output_buf.fd, cmd.output_buf.offs, output_base_addr, output_buf_size, cmd.output_size);
 	if (ret)
 		return ret;
 	if (output_buf_size < cmd.output_size * 2)
@@ -668,7 +660,6 @@ static int dv_convert_fc_v0(struct device *dev, struct dmp_cmb *cmb,
 			weight_buf_size, weight_size);
 		return -EINVAL;
 	}
-	pr_debug(DRM_DEV_NAME": get_dma_addr fc weight fd:%d offs:%llx %08x %x %x %x\n", cmd.weight_buf.fd, cmd.weight_buf.offs, weight_base_addr, weight_buf_size, weight_addr, weight_size);
 
 	cmb_node = list_first_entry(&cmb->cmb_list, struct dmp_cmb_list_entry,
 				    list_node);
@@ -750,9 +741,9 @@ static int dv_convert_fc_v0(struct device *dev, struct dmp_cmb *cmb,
 	cmb_node->size += cmd_size;
 
 #ifdef _TVGEN_
-	tvgen_mem_input(&cmd.input_buf, input_base_addr, cmd.input_size);
 	tvgen_mem_weight(&cmd.weight_buf, weight_addr, weight_size);
-	tvgen_mem_output(&cmd.output_buf, output_base_addr, cmd.output_size);
+	tvgen_mem_input(&cmd.input_buf, input_base_addr, cmd.input_size * 2);
+	tvgen_mem_output(&cmd.output_buf, output_base_addr, cmd.output_size * 2);
 #endif
 	return 0;
 }
