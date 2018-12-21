@@ -741,7 +741,7 @@ static int dv_convert_fc_v0(struct device *dev, struct dmp_cmb *cmb,
 	cmb_node->size += cmd_size;
 
 #ifdef _TVGEN_
-	tvgen_mem_weight(&cmd.weight_buf, weight_addr, weight_size);
+	tvgen_mem_weight(&cmd.weight_buf, weight_base_addr, weight_size);
 	tvgen_mem_input(&cmd.input_buf, input_base_addr, cmd.input_size * 2);
 	tvgen_mem_output(&cmd.output_buf, output_base_addr, cmd.output_size * 2);
 #endif
