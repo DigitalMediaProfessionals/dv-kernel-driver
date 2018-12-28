@@ -20,7 +20,7 @@
 #define _DMP_DV_H
 
 #define DRM_DEV_NAME "dmp_dv"
-#define DRM_NUM_SUBDEV 3
+#define DRM_NUM_SUBDEV 4
 #define DRM_MAX_FIRMWARE_SIZE 0x2000
 #define DRM_WAIT_TIMEOUT (2 * HZ)
 #define DRM_MAX_WAIT_COUNT 10
@@ -42,7 +42,10 @@ int dv_convert_fc_command(struct device *dev, struct dmp_cmb *cmb,
 			  struct dmp_dv_kcmd *cmd_info);
 void dv_run_fc_command(struct dmp_cmb *cmb, void *bar_logical);
 int dv_convert_ipu_command(struct device *dev, struct dmp_cmb *cmb,
-			  struct dmp_dv_kcmd *cmd_info);
+			   struct dmp_dv_kcmd *cmd_info);
 void dv_run_ipu_command(struct dmp_cmb *cmb, void *bar_logical);
+int dv_convert_maximizer_command(struct device *dev, struct dmp_cmb *cmb,
+			  	 struct dmp_dv_kcmd *cmd_info);
+void dv_run_maximizer_command(struct dmp_cmb *cmb, void *bar_logical);
 
 #endif

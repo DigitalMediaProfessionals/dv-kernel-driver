@@ -152,4 +152,17 @@ struct dmp_dv_kcmdraw_ipu_v0 {
 	__u8 rsvd2[5];		// padding to 64-bit size
 };
 
+/// @brief Raw command for maximizer version 0.
+struct dmp_dv_kcmdraw_maximizer_v0 {
+	struct dmp_dv_kcmdraw header;	// general structure information
+	struct dmp_dv_kbuf input_buf;	// input buffer
+	struct dmp_dv_kbuf output_buf;	// output buffer
+
+	__u16 width;	// width of input
+	__u16 height;	// height of input
+	__u8  nclass;	// # of classes
+
+	__u8  rsvd[3];	// padding to 64-bit size
+};
+
 #endif  // _UAPI_LINUX_DMP_DV_CMDRAW_V0_H
