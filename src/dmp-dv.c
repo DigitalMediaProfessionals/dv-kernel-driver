@@ -166,10 +166,20 @@ static void cmd_work(struct work_struct *work)
 	struct dv_cmd_work_item	*wo = container_of(work,
 		struct dv_cmd_work_item, work);
 	struct dmp_dev_private *dev_pri = wo->dev_pri;
+
+#ifdef _TVGEN_
+	tvgen_mem_input(0,0,0);
+#endif
+
 	wo->run_func(dev_pri->cmb, dev_pri->dev->bar_logical);
 	while (count < DRM_MAX_WAIT_COUNT &&
 	       wait_cmd_id(dev_pri->dev, wo->cmd_id) != 0)
 		++count;
+
+#ifdef _TVGEN_
+	tvgen_mem_output(0,0,0);
+#endif
+
 	kfree(wo);
 }
 
@@ -253,6 +263,9 @@ static long drm_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		if (copy_from_user(&cmd_info, (void __user *)arg,
 				   _IOC_SIZE(cmd)))
 			return -EFAULT;
+#ifdef _TVGEN_
+		tvgen_set_buffer();
+#endif
 		ret = cmd_func[minor](drm_dev->dev, dev_pri->cmb, &cmd_info);
 		break;
 	case DMP_DV_IOC_RUN:
@@ -269,6 +282,9 @@ static long drm_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			return -EFAULT;
 		}
 		wo->cmd_id = cmd_id;
+#ifdef _TVGEN_
+		tvgen_set_output();
+#endif
 		queue_work(dev_pri->dev->wq, &wo->work);
 		spin_unlock(&dev_pri->dev->wq_exclusive);
 		break;

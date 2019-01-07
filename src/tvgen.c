@@ -27,15 +27,19 @@
 
 phys_addr_t tvgen_bar_physical[DRM_NUM_SUBDEV];
 
-typedef struct
-{
+struct list_buf {
   struct dma_buf *dma_buf;
   dma_addr_t physical;
   u64 offs;
   size_t size;
-} tvgen_buf;
-static tvgen_buf buf_input;
-static tvgen_buf buf_output;
+  struct list_head list;
+};
+static struct list_head list_buf_input;
+static struct list_head list_buf_output;
+static bool is_buf_empty_input;
+static struct list_buf buf_output;
+static int buf_count_input;
+static int buf_count_output;
 
 struct list_init {
   u32 value;
@@ -43,27 +47,30 @@ struct list_init {
   u32 offset;
   struct list_head list;
 };
-static struct list_head head_init;
+static struct list_head list_init_head;
 
-static struct file* file_phi_ocp = NULL;
-static struct file* file_memdump = NULL;
-static struct file* file_output = NULL;
+static char file_dir[PATH_MAX];
 
-static struct file *file_open(const char *path)
+struct file* file_phi_ocp = NULL;
+struct file* file_memdump = NULL;
+
+static struct file *file_open(const char *file_name, int id)
 {
   struct file *filp = NULL;
   mm_segment_t oldfs;
-  int err = 0;
+
+  char* path = (char*)kmalloc(PATH_MAX, GFP_KERNEL);
+  if(id>=0)
+    sprintf(path, "%s/%s%d.txt", file_dir, file_name, id);
+  else
+    sprintf(path, "%s/%s.txt", file_dir, file_name);
 
   oldfs = get_fs();
   set_fs(get_ds());
   filp = filp_open(path, O_WRONLY | O_CREAT | O_TRUNC | O_LARGEFILE, 0644);
   set_fs(oldfs);
-  if (IS_ERR(filp))
-    {
-      err = PTR_ERR(filp);
-      return NULL;
-    }
+
+  kfree(path);
   return filp;
 }
 
@@ -110,7 +117,9 @@ static void write_mem(struct file* file, const char* fmt, ...)
 
 void tvgen_init(void)
 {
-  INIT_LIST_HEAD(&head_init);
+  INIT_LIST_HEAD(&list_init_head);
+  INIT_LIST_HEAD(&list_buf_input);
+  INIT_LIST_HEAD(&list_buf_output);
 }
 
 void tvgen_release(void)
@@ -118,7 +127,7 @@ void tvgen_release(void)
   // release init sequence
   struct list_init *ltmp;
   struct list_init *lobj;
-  list_for_each_entry_safe(lobj, ltmp, &head_init, list)
+  list_for_each_entry_safe(lobj, ltmp, &list_init_head, list)
     {
       list_del(&lobj->list);
       kfree(lobj);
@@ -137,67 +146,51 @@ void tvgen_add_init(u32 value, u32 devid, u32 offset)
   data->value = value;
   data->devid = devid;
   data->offset = offset;
-  list_add(&data->list, &head_init);
+  list_add(&data->list, &list_init_head);
 }
 
 void tvgen_start(const char* path)
 {
-  char* filename = (char*)kmalloc(PATH_MAX, GFP_KERNEL);
+  strcpy(file_dir, path? path : TVGEN_DEFAULT_FILE_PATH);
 
   if(file_phi_ocp) { file_close(file_phi_ocp); file_phi_ocp = NULL; }
   if(file_memdump) { file_close(file_memdump); file_memdump = NULL; }
-  if(file_output) { file_close(file_output); file_output = NULL; }
 
-  buf_input.dma_buf = 0;
-  buf_input.size = 0;
-  buf_output.dma_buf = 0;
-  buf_output.size = 0;
-
-  strcpy(filename, path? path : TVGEN_DEFAULT_FILE_PATH);
-  strcat(filename, TVGEN_PHI_OCP_FILENAME);
-  file_phi_ocp = file_open(filename);
+  pr_debug("tvgen_start\n");
+  
+  file_phi_ocp = file_open(TVGEN_PHI_OCP_FILENAME, -1);
   if(file_phi_ocp==NULL)
     {
-      pr_err(DRM_DEV_NAME": file open error [%s]\n", filename);
+      pr_err(DRM_DEV_NAME": file open error [%s%s]\n", path, TVGEN_PHI_OCP_FILENAME);
     }
 
-  strcpy(filename, path? path : TVGEN_DEFAULT_FILE_PATH);
-  strcat(filename, TVGEN_MEMDUMP_FILENAME);
-  file_memdump = file_open(filename);
+  file_memdump = file_open(TVGEN_MEMDUMP_FILENAME, -1);
   if(file_memdump==NULL)
     {
-      pr_err(DRM_DEV_NAME": file open error [%s]\n", filename);
+      pr_err(DRM_DEV_NAME": file open error [%s%s]\n", path, TVGEN_MEMDUMP_FILENAME);
     }
-
-  strcpy(filename, path? path : TVGEN_DEFAULT_FILE_PATH);
-  strcat(filename, TVGEN_OUTPUT_FILENAME);
-  file_output = file_open(filename);
-  if(file_output==NULL)
-    {
-      pr_err(DRM_DEV_NAME": file open error [%s]\n", filename);
-    }
-
-  kfree(filename);
 
   // write init sequence
   {
     struct list_head *list;
     struct list_init *data;
-    list_for_each(list, &head_init)
+    list_for_each(list, &list_init_head)
       {
 	data = list_entry(list, struct list_init, list);
 	tvgen_phi_ocp_i(data->value, data->devid, data->offset);
       }
   }
+
+  buf_count_input = 0;
+  buf_count_output = 0;
+  buf_output.dma_buf = 0;
+  tvgen_set_buffer();
 }
 
 void tvgen_end(void)
 {
-  tvgen_mem_output(0,0,0);
-  
   if(file_phi_ocp) { file_close(file_phi_ocp); file_phi_ocp = NULL; }
   if(file_memdump) { file_close(file_memdump); file_memdump = NULL; }
-  if(file_output) { file_close(file_output); file_output = NULL; }
 }
 
 // write to phi_ocp
@@ -211,12 +204,11 @@ void tvgen_phi_ocp_a(u32 value, u32 addr)
   write_phi_ocp("2_00_%08llx_f_%08x\n", addr, value);
 }
 
-void tvgen_mem_write(const char* name, void *logical, dma_addr_t physical, ssize_t size)
+void tvgen_mem_write(struct file* file, void *logical, dma_addr_t physical, ssize_t size, char* comment)
 {
-  struct file* file = name? file_memdump : file_output;
   u32* mem = (u32*)logical;
 
-  if(name) write_mem(file,"[%s]\n", name);
+  if(comment) write_mem(file,"[%s]\n", comment);
   
   while(size>0)
     {
@@ -238,7 +230,7 @@ void tvgen_mem_weight(const struct dmp_dv_kbuf* buf, dma_addr_t physical, u64 si
   dma_buf_begin_cpu_access(dma_buf, DMA_BIDIRECTIONAL);
   logical = dma_buf_kmap(dma_buf, 0);
 
-  tvgen_mem_write("weight", logical + buf->offs, physical, size);
+  tvgen_mem_write(file_memdump, logical + buf->offs, physical, size, "weight");
 
   dma_buf_kunmap(dma_buf, 0, logical);
   dma_buf_end_cpu_access(dma_buf, DMA_BIDIRECTIONAL);
@@ -247,28 +239,45 @@ void tvgen_mem_weight(const struct dmp_dv_kbuf* buf, dma_addr_t physical, u64 si
 
 void tvgen_mem_input(const struct dmp_dv_kbuf* buf, dma_addr_t physical, u64 size)
 {
-  if(buf && !buf_input.size)
+  struct list_buf *input;
+
+  if(buf && is_buf_empty_input)
     {
-      // first input buffer
-      buf_input.dma_buf = dma_buf_get(buf->fd);
-      buf_input.offs = buf->offs;
-      buf_input.physical = physical;
-      buf_input.size = size;
+      //pr_debug(DRM_DEV_NAME": set mem_input\n");
+
+      input = kmalloc(sizeof(struct list_buf), GFP_KERNEL);
+      input->dma_buf = dma_buf_get(buf->fd);
+      input->offs = buf->offs;
+      input->physical = physical;
+      input->size = size;
+
+      list_add(&input->list, &list_buf_input);
+      is_buf_empty_input = false;
     }
-  else if(!buf && buf_input.dma_buf)
+  else if(!buf && !list_empty(&list_buf_input))
     {
       u8 *logical;
+      struct file* file;
+      u64 index = buf_count_input++;
       
-      dma_buf_begin_cpu_access(buf_input.dma_buf, DMA_BIDIRECTIONAL);
-      logical = dma_buf_kmap(buf_input.dma_buf, 0);
+      //pr_debug(DRM_DEV_NAME": put mem_input %lld\n", index);
 
-      tvgen_mem_write("input", logical + buf_input.offs, buf_input.physical, buf_input.size);
+      // get entry
+      input = list_last_entry(&list_buf_input, struct list_buf, list);
+      list_del(&input->list);
 
-      dma_buf_kunmap(buf_input.dma_buf, 0, logical);
-      dma_buf_end_cpu_access(buf_input.dma_buf, DMA_BIDIRECTIONAL);
-      dma_buf_put(buf_input.dma_buf);
+      dma_buf_begin_cpu_access(input->dma_buf, DMA_BIDIRECTIONAL);
+      logical = dma_buf_kmap(input->dma_buf, 0);
 
-      buf_input.dma_buf = 0;
+      file = file_open(TVGEN_INPUT_FILENAME, index);
+      tvgen_mem_write(file, logical + input->offs, input->physical, input->size, "input");
+      file_close(file);
+
+      dma_buf_kunmap(input->dma_buf, 0, logical);
+      dma_buf_end_cpu_access(input->dma_buf, DMA_BIDIRECTIONAL);
+      dma_buf_put(input->dma_buf);
+
+      kfree(input);
     }
 }
 
@@ -284,19 +293,52 @@ void tvgen_mem_output(const struct dmp_dv_kbuf* buf, dma_addr_t physical, u64 si
       buf_output.physical = physical;
       buf_output.size = size;
     }
-  else if(buf_output.dma_buf)
+  else if(!buf && !list_empty(&list_buf_output))
     {
       u8 *logical;
+      struct file* file;
+      int index = buf_count_output++;
+      struct list_buf *output;
+
+      //pr_debug(DRM_DEV_NAME": put mem_output %d\n", index);
       
-      dma_buf_begin_cpu_access(buf_output.dma_buf, DMA_BIDIRECTIONAL);
-      logical = dma_buf_kmap(buf_output.dma_buf, 0);
+      // get entry
+      output = list_last_entry(&list_buf_output, struct list_buf, list);
+      list_del(&output->list);
 
-      tvgen_mem_write(NULL, logical + buf_output.offs, buf_output.physical, buf_output.size);
+      dma_buf_begin_cpu_access(output->dma_buf, DMA_BIDIRECTIONAL);
+      logical = dma_buf_kmap(output->dma_buf, 0);
 
-      dma_buf_kunmap(buf_output.dma_buf, 0, logical);
-      dma_buf_end_cpu_access(buf_output.dma_buf, DMA_BIDIRECTIONAL);
-      dma_buf_put(buf_output.dma_buf);
+      file = file_open(TVGEN_OUTPUT_FILENAME, index);
+      tvgen_mem_write(file, logical + output->offs, output->physical, output->size, "output");
+      file_close(file);
 
+      dma_buf_kunmap(output->dma_buf, 0, logical);
+      dma_buf_end_cpu_access(output->dma_buf, DMA_BIDIRECTIONAL);
+      dma_buf_put(output->dma_buf);
+
+      kfree(output);
+    }
+}
+
+void tvgen_set_buffer()
+{
+  is_buf_empty_input = true;
+  tvgen_set_output();
+}
+
+void tvgen_set_output()
+{
+  if(buf_output.dma_buf)
+    {
+      struct list_buf *output;
+
+      //pr_debug(DRM_DEV_NAME": set mem_output\n");
+
+      output = kmalloc(sizeof(struct list_buf), GFP_KERNEL);
+      memcpy(output, &buf_output, sizeof(struct list_buf));
+
+      list_add(&output->list, &list_buf_output);
       buf_output.dma_buf = 0;
     }
 }

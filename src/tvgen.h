@@ -19,11 +19,10 @@
 #define _TVGEN_H
 
 #define TVGEN_DEFAULT_FILE_PATH "/tmp"
-//#define TVGEN_DEFAULT_FILE_PATH "/mnt/dv"
-//#define TVGEN_DEFAULT_FILE_PATH "/media/card"
-#define TVGEN_PHI_OCP_FILENAME "/phi_ocp.txt"
-#define TVGEN_MEMDUMP_FILENAME "/memdump.txt"
-#define TVGEN_OUTPUT_FILENAME "/output.txt"
+#define TVGEN_PHI_OCP_FILENAME "phi_ocp"
+#define TVGEN_MEMDUMP_FILENAME "memdump"
+#define TVGEN_INPUT_FILENAME "input"
+#define TVGEN_OUTPUT_FILENAME "output"
 
 enum TVGEN_DEV_ID {
   TVGEN_DEV_CONV =0,
@@ -31,6 +30,9 @@ enum TVGEN_DEV_ID {
   TVGEN_DEV_IPU,
   TVGEN_DEV_MAX
 };
+
+extern struct file* file_phi_ocp;
+extern struct file* file_memdump;
 
 void tvgen_init(void);
 void tvgen_release(void);
@@ -40,9 +42,11 @@ void tvgen_set_physical(int idx, phys_addr_t addr);
 void tvgen_add_init(u32 value, u32 devid, u32 offset);
 void tvgen_phi_ocp_i(u32 value, u32 devid, u32 offset);
 void tvgen_phi_ocp_a(u32 value, u32 addr);
-void tvgen_mem_write(const char* name, void *logical, dma_addr_t physical, ssize_t size);
+void tvgen_mem_write(struct file* file, void* logical, dma_addr_t physical, ssize_t size, char* comment);
 void tvgen_mem_weight(const struct dmp_dv_kbuf* buf, dma_addr_t physical, u64 size);
 void tvgen_mem_input(const struct dmp_dv_kbuf* buf, dma_addr_t physical, u64 size);
 void tvgen_mem_output(const struct dmp_dv_kbuf* buf, dma_addr_t physical, u64 size);
+void tvgen_set_buffer(void);
+void tvgen_set_output(void);
 
 #endif//_TVGEN_H

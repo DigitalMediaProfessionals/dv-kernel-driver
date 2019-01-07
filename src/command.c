@@ -591,14 +591,13 @@ void dv_run_conv_command(struct dmp_cmb *cmb, void *bar_logical)
 			prev_size += sizeof(uint32_t);
 		}
 #ifdef _TVGEN_
-		tvgen_mem_write("conv", cmb_node->logical, prev_addr, prev_size);
+		tvgen_mem_write(file_memdump, cmb_node->logical, prev_addr, prev_size, "conv");
 #endif
 	}
 
 	barrier();
 
 #ifdef _TVGEN_
-	tvgen_mem_input(0,0,0); // write input buffer
 	tvgen_phi_ocp_i(prev_addr, TVGEN_DEV_CONV, 0x0400);
 	tvgen_phi_ocp_i(prev_size / 8, TVGEN_DEV_CONV, 0x0404);
 	tvgen_phi_ocp_i(0x1, TVGEN_DEV_CONV, 0x0408);
@@ -819,14 +818,13 @@ void dv_run_fc_command(struct dmp_cmb *cmb, void *bar_logical)
 			prev_size += sizeof(uint32_t);
 		}
 #ifdef _TVGEN_
-		tvgen_mem_write("fc", cmb_node->logical, prev_addr, prev_size);
+		tvgen_mem_write(file_memdump, cmb_node->logical, prev_addr, prev_size, "fc");
 #endif
 	}
 
 	barrier();
 
 #ifdef _TVGEN_
-	tvgen_mem_input(0,0,0); // write input buffer
 	tvgen_phi_ocp_i(prev_size / 8, TVGEN_DEV_FC, 0x0);
 	tvgen_phi_ocp_i(prev_addr, TVGEN_DEV_FC, 0x4);
 	tvgen_phi_ocp_i(0x1, TVGEN_DEV_FC, 0x8);
@@ -993,6 +991,10 @@ static int dv_convert_ipu_v0(struct device *dev, struct dmp_cmb *cmb,
 				&cmd, cmd_buf, 
 				cmb_node->capacity - cmb_node->size,
 				tex_base_addr, rd_base_addr, wr_base_addr);
+
+#ifdef _TVGEN_
+	pr_debug(DRM_DEV_NAME": commit ipu\n");
+#endif
 	return 0;
 }
 
@@ -1120,6 +1122,9 @@ static int dv_convert_maximizer_v0(struct device *dev, struct dmp_cmb *cmb,
 	cmd_buf[i++] = 0;
 	cmd_buf[i++] = 0;
 
+#ifdef _TVGEN_
+	pr_debug(DRM_DEV_NAME": commit maximizer\n");
+#endif
 	return 0;
 }
 
