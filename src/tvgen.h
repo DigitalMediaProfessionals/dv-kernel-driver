@@ -19,16 +19,17 @@
 #define _TVGEN_H
 
 #define TVGEN_DEFAULT_FILE_PATH "/tmp"
-#define TVGEN_PHI_OCP_FILENAME "phi_ocp"
-#define TVGEN_MEMDUMP_FILENAME "memdump"
-#define TVGEN_INPUT_FILENAME "input"
-#define TVGEN_OUTPUT_FILENAME "output"
+#define TVGEN_PHI_OCP_FILENAME "tv_phi_ocp"
+#define TVGEN_MEMDUMP_FILENAME "tv_memdump"
+#define TVGEN_INPUT_FILENAME "tv_input"
+#define TVGEN_OUTPUT_FILENAME "tv_output"
 
 enum TVGEN_DEV_ID {
   TVGEN_DEV_CONV =0,
   TVGEN_DEV_FC,
   TVGEN_DEV_IPU,
-  TVGEN_DEV_MAX
+  TVGEN_DEV_MAXIMIZER,
+  TVGEN_DEV_NUM
 };
 
 extern struct file* file_phi_ocp;

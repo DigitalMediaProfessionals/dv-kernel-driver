@@ -1124,6 +1124,8 @@ static int dv_convert_maximizer_v0(struct device *dev, struct dmp_cmb *cmb,
 
 #ifdef _TVGEN_
 	pr_debug(DRM_DEV_NAME": commit maximizer\n");
+	tvgen_mem_input(&cmd.input_buf, in_base_addr, in_sz);
+	tvgen_mem_output(&cmd.output_buf, out_base_addr, out_sz);
 #endif
 	return 0;
 }
@@ -1176,6 +1178,14 @@ void dv_run_maximizer_command(struct dmp_cmb *cmb, void *bar_logical)
 		val = *cmd;
 		cmd++;
 		iowrite32(val, REG_IO_ADDR(bar_logical, offset));
+
+#ifdef _TVGEN_
+		tvgen_phi_ocp_i(val, TVGEN_DEV_MAXIMIZER, offset);
+#endif
 	}
 	iowrite32(0x1, REG_IO_ADDR(bar_logical, 0x08));
+
+#ifdef _TVGEN_
+	tvgen_phi_ocp_i(0x1, TVGEN_DEV_MAXIMIZER, 0x08);
+#endif
 }
