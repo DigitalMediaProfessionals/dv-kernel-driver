@@ -21,6 +21,11 @@
 #include <linux/mm.h>
 #include <linux/dma-buf.h>
 
+#include <linux/device.h>
+#include <linux/platform_device.h>
+#include <linux/cdev.h>
+#include <linux/ioctl.h>
+
 #include "dmp-dv.h"
 #include "../uapi/dmp_dv_cmdraw_v0.h"
 #include "tvgen.h"
@@ -156,8 +161,6 @@ void tvgen_start(const char* path)
   if(file_phi_ocp) { file_close(file_phi_ocp); file_phi_ocp = NULL; }
   if(file_memdump) { file_close(file_memdump); file_memdump = NULL; }
 
-  pr_debug("tvgen_start\n");
-  
   file_phi_ocp = file_open(TVGEN_PHI_OCP_FILENAME, -1);
   if(file_phi_ocp==NULL)
     {
@@ -341,4 +344,94 @@ void tvgen_set_output()
       list_add(&output->list, &list_buf_output);
       buf_output.dma_buf = 0;
     }
+}
+
+/****************************************/
+#define TVGEN_DRV_DEV_NAME "dmp_tv"
+
+struct drm_dev
+{
+  struct cdev cdev;
+  dev_t devt;
+  struct class *class;
+  unsigned int major;
+  struct device *dev;
+};
+static struct drm_dev drm_dev;
+
+static int drm_open(struct inode *inode, struct file *file)
+{
+  return 0;
+}
+
+static int drm_release(struct inode *inode, struct file *file)
+{
+  return 0;
+}
+
+static long drm_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+{
+  long ret = 0;
+
+  switch (cmd) {
+  case DMP_DV_IOC_TVGEN_OPEN:
+    if(arg)
+      {
+	char* path = (char*)kmalloc(PATH_MAX, GFP_KERNEL);
+	int i;
+	for(i=0; i<PATH_MAX; i++)
+	  {
+	    if(get_user(path[i],(char*)(arg+i))) return -EFAULT;
+	    if(path[i] == '\0') break;
+	  }
+	tvgen_start(path);
+	kfree(path);
+      }
+    else
+      {
+	tvgen_start(0); // default path
+      }
+    break;
+  case DMP_DV_IOC_TVGEN_CLOSE:
+    tvgen_end();
+    break;
+  default:
+    break;
+  }
+
+  return ret;
+}
+
+static struct file_operations drm_file_operations = {
+  .owner = THIS_MODULE,
+  .open = drm_open,
+  .release = drm_release,
+  .unlocked_ioctl = drm_ioctl,
+};
+
+int tvgen_drm_register()
+{
+  int err = 0;
+
+  err = alloc_chrdev_region(&drm_dev.devt, 0, 1, TVGEN_DRM_DEV_NAME);
+  drm_dev.class = class_create(THIS_MODULE, TVGEN_DRM_DEV_NAME);
+  drm_dev.major = MAJOR(drm_dev.devt);
+  cdev_init(&drm_dev.cdev, &drm_file_operations);
+  err = cdev_add(&drm_dev.cdev, drm_dev.devt, 1);
+  drm_dev.dev = device_create(drm_dev.class, NULL, MKDEV(drm_dev.major, 0), &drm_dev, TVGEN_DRM_DEV_NAME);
+
+  tvgen_start(0);
+  return 0;
+}
+
+int tvgen_drm_unregister()
+{
+  tvgen_end();
+  tvgen_release();
+
+  device_destroy(drm_dev.class, drm_dev.devt);
+  cdev_del(&drm_dev.cdev);
+  class_destroy(drm_dev.class);
+  unregister_chrdev_region(drm_dev.devt, 1);
+  return 0;
 }

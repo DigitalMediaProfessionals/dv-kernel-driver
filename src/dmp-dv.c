@@ -293,31 +293,6 @@ static long drm_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			return -EFAULT;
 		ret = wait_cmd_id(dev_pri->dev, cmd_id);
 		break;
-
-#ifdef _TVGEN_
-	case DMP_DV_IOC_TVGEN_OPEN:
-	  if(arg)
-	    {
-	      char* path = (char*)kmalloc(PATH_MAX, GFP_KERNEL);
-	      int i;
-	      for(i=0; i<PATH_MAX; i++)
-		{
-		  if(get_user(path[i],(char*)(arg+i))) return -EFAULT;
-		  if(path[i] == '\0') break;
-		}
-	      tvgen_start(path);
-	      kfree(path);
-	    }
-	  else
-	    {
-	      tvgen_start(0); // default path
-	    }
-	  break;
-	case DMP_DV_IOC_TVGEN_CLOSE:
-	  tvgen_end();
-	  break;
-#endif
-
 	default:
 		break;
 	}
@@ -863,10 +838,6 @@ static int drm_dev_probe(struct platform_device *pdev)
 #endif
 	  }
 
-#ifdef _TVGEN_
-	tvgen_start(0);
-#endif
-
 	// Convert unified buffer size from kilobytes to bytes
 	if ((!UNIFIED_BUFFER_SIZE) || (UNIFIED_BUFFER_SIZE > 2097151)) {  // in KBytes
 		pr_warning(DRM_DEV_NAME ": Detected suspicious ubuf-size value %u KB in the device tree, using default %u KB instead",
@@ -882,6 +853,9 @@ static int drm_dev_probe(struct platform_device *pdev)
 	dev_dbg(&pdev->dev, "probe successful: UNIFIED_BUFFER_SIZE=%u\n",
 		UNIFIED_BUFFER_SIZE);
 
+#ifdef _TVGEN_
+	tvgen_drm_register();
+#endif
 	return 0;
 
 fail_register_chrdev:
@@ -907,8 +881,7 @@ static int drm_dev_remove(struct platform_device *pdev)
 	int i;
 
 #ifdef _TVGEN_
-	tvgen_end();
-	tvgen_release();
+	tvgen_drm_unregister();
 #endif
 
 	dev_dbg(&pdev->dev, "remove begin\n");

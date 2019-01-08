@@ -19,10 +19,10 @@
 #define _TVGEN_H
 
 #define TVGEN_DEFAULT_FILE_PATH "/tmp"
-#define TVGEN_PHI_OCP_FILENAME "tv_phi_ocp"
-#define TVGEN_MEMDUMP_FILENAME "tv_memdump"
-#define TVGEN_INPUT_FILENAME "tv_input"
-#define TVGEN_OUTPUT_FILENAME "tv_output"
+#define TVGEN_PHI_OCP_FILENAME "dv_phi_ocp"
+#define TVGEN_MEMDUMP_FILENAME "dv_memdump"
+#define TVGEN_INPUT_FILENAME "dv_input"
+#define TVGEN_OUTPUT_FILENAME "dv_output"
 
 enum TVGEN_DEV_ID {
   TVGEN_DEV_CONV =0,
@@ -49,5 +49,7 @@ void tvgen_mem_input(const struct dmp_dv_kbuf* buf, dma_addr_t physical, u64 siz
 void tvgen_mem_output(const struct dmp_dv_kbuf* buf, dma_addr_t physical, u64 size);
 void tvgen_set_buffer(void);
 void tvgen_set_output(void);
+int tvgen_drm_register(void);
+int tvgen_drm_unregister(void);
 
 #endif//_TVGEN_H
