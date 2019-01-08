@@ -30,6 +30,8 @@
 #include "../uapi/dmp_dv_cmdraw_v0.h"
 #include "tvgen.h"
 
+#define CREATE_INPUT_FILE
+
 phys_addr_t tvgen_bar_physical[DRM_NUM_SUBDEV];
 
 struct list_buf {
@@ -207,6 +209,18 @@ void tvgen_phi_ocp_a(u32 value, u32 addr)
   write_phi_ocp("2_00_%08llx_f_%08x\n", addr, value);
 }
 
+void tvgen_phi_ocp_m(void *logical, dma_addr_t physical, ssize_t size)
+{
+  u32* mem = (u32*)logical;
+  while(size>0)
+    {
+      tvgen_phi_ocp_a(*mem, physical);
+      mem++;
+      physical += 4;
+      size -= 4;
+    }
+}
+
 void tvgen_mem_write(struct file* file, void *logical, dma_addr_t physical, ssize_t size, char* comment)
 {
   u32* mem = (u32*)logical;
@@ -260,8 +274,6 @@ void tvgen_mem_input(const struct dmp_dv_kbuf* buf, dma_addr_t physical, u64 siz
   else if(!buf && !list_empty(&list_buf_input))
     {
       u8 *logical;
-      struct file* file;
-      u64 index = buf_count_input++;
       
       //pr_debug(DRM_DEV_NAME": put mem_input %lld\n", index);
 
@@ -272,10 +284,17 @@ void tvgen_mem_input(const struct dmp_dv_kbuf* buf, dma_addr_t physical, u64 siz
       dma_buf_begin_cpu_access(input->dma_buf, DMA_BIDIRECTIONAL);
       logical = dma_buf_kmap(input->dma_buf, 0);
 
-      file = file_open(TVGEN_INPUT_FILENAME, index);
-      tvgen_mem_write(file, logical + input->offs, input->physical, input->size, "input");
-      file_close(file);
-
+#ifdef CREATE_INPUT_FILE
+      {
+	struct file* file;
+	u64 index = buf_count_input++;
+	file = file_open(TVGEN_INPUT_FILENAME, index);
+	tvgen_mem_write(file, logical + input->offs, input->physical, input->size, "input");
+	file_close(file);
+      }
+#else
+      tvgen_phi_ocp_m(logical + input->offs, input->physical, input->size);
+#endif
       dma_buf_kunmap(input->dma_buf, 0, logical);
       dma_buf_end_cpu_access(input->dma_buf, DMA_BIDIRECTIONAL);
       dma_buf_put(input->dma_buf);
@@ -347,7 +366,7 @@ void tvgen_set_output()
 }
 
 /****************************************/
-#define TVGEN_DRV_DEV_NAME "dmp_tv"
+#define TVGEN_DRM_DEV_NAME "dmp_tv"
 
 struct drm_dev
 {

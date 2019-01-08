@@ -597,15 +597,15 @@ void dv_run_conv_command(struct dmp_cmb *cmb, void *bar_logical)
 
 	barrier();
 
+	iowrite32(prev_addr, REG_IO_ADDR(bar_logical, 0x0400));
+	iowrite32(prev_size / 8, REG_IO_ADDR(bar_logical, 0x0404));
+	iowrite32(0x1, REG_IO_ADDR(bar_logical, 0x0408));
+
 #ifdef _TVGEN_
 	tvgen_phi_ocp_i(prev_addr, TVGEN_DEV_CONV, 0x0400);
 	tvgen_phi_ocp_i(prev_size / 8, TVGEN_DEV_CONV, 0x0404);
 	tvgen_phi_ocp_i(0x1, TVGEN_DEV_CONV, 0x0408);
 #endif
-
-	iowrite32(prev_addr, REG_IO_ADDR(bar_logical, 0x0400));
-	iowrite32(prev_size / 8, REG_IO_ADDR(bar_logical, 0x0404));
-	iowrite32(0x1, REG_IO_ADDR(bar_logical, 0x0408));
 }
 
 static int dv_convert_fc_v0(struct device *dev, struct dmp_cmb *cmb,
@@ -824,15 +824,15 @@ void dv_run_fc_command(struct dmp_cmb *cmb, void *bar_logical)
 
 	barrier();
 
+	iowrite32(prev_size / 8, REG_IO_ADDR(bar_logical, 0x0));
+	iowrite32(prev_addr, REG_IO_ADDR(bar_logical, 0x4));
+	iowrite32(0x1, REG_IO_ADDR(bar_logical, 0x8));
+
 #ifdef _TVGEN_
 	tvgen_phi_ocp_i(prev_size / 8, TVGEN_DEV_FC, 0x0);
 	tvgen_phi_ocp_i(prev_addr, TVGEN_DEV_FC, 0x4);
 	tvgen_phi_ocp_i(0x1, TVGEN_DEV_FC, 0x8);
 #endif
-
-	iowrite32(prev_size / 8, REG_IO_ADDR(bar_logical, 0x0));
-	iowrite32(prev_addr, REG_IO_ADDR(bar_logical, 0x4));
-	iowrite32(0x1, REG_IO_ADDR(bar_logical, 0x8));
 }
 
 static uint32_t dv_ipu_v0_get_cmb_size(const struct dmp_dv_kcmdraw_ipu_v0 *cmd)
