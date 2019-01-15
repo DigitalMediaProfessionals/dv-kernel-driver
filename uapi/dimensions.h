@@ -344,9 +344,18 @@ struct conv_data_size {
 /// @param pad_left Left padding.
 /// @param pad_right Right padding.
 /// @param stride Stride.
-static inline int get_conv_out_width(int width, int kx, int pad_left, int pad_right, int stride)
+/// @param is_deconv 1 for deconvolution, 0 otherwise.
+static inline int get_conv_out_width(
+		int width, int kx, int pad_left, int pad_right,
+		int stride, int is_deconv)
 {
-	return (pad_left + width + pad_right - kx) / stride + 1;
+	return (pad_left + (is_deconv ? (width - 1) * stride + 1 : width) + pad_right - kx) / (is_deconv ? 1 : stride) + 1;
+}
+
+
+/// @brief Returns non-zero if the provided run specifies deconvolution.
+static inline int is_deconv_v0(const struct dmp_dv_kcmdraw_conv_v0_run *run) {
+	return (run->conv_enable & 4) ? 1 : 0;
 }
 
 
@@ -370,11 +379,12 @@ static inline int is_conv_2d_v0(const struct dmp_dv_kcmdraw_conv_v0_run *run) {
 /// @param stride_y Vertical stride.
 /// @param u_kb Size of unified buffer in Kb.
 /// @param is_conv 1 for convolution, 0 for LRN.
+/// @param is_deconv 1 for deconvolution, 0 otherwise.
 static int calc_num_tiles_conv_lrn(
 		int w, int h, int c, int m, int p,
 		int pad_x0, int pad_x1, int pad_y0, int pad_y1,
 		int stride_x, int stride_y,
-		int u_kb, int is_conv) {
+		int u_kb, int is_conv, int is_deconv) {
 	const int u = u_kb * 1024 / 2; // size of unified buffer in number of float16
 
 	const int C_blocks = (c >> CONV_C_SUB_LOG2) + (((c & ((1 << CONV_C_SUB_LOG2) - 1)) == 0) ? 0 : 1);
@@ -414,8 +424,10 @@ static int calc_num_tiles_conv_lrn(
 		t++;
 		tw = w / t + (w % t ? 1 : 0) + (p - 1); // width of tile
 		ts_1c = tw * h; // tile size for single channel
-		ow = (tw + pad_x0 + pad_x1 - p) / stride_x + 1;
-		oh = (h + pad_y0 + pad_y1 - p) / stride_y + 1;
+
+		ow = get_conv_out_width(tw, p, pad_x0, pad_x1, stride_x, is_deconv);
+		oh = get_conv_out_width( h, p, pad_y0, pad_y1, stride_y, is_deconv);
+
 		os = ow * oh * (m > 8 ? 8 : m); // output buffer size
 
 		ts_blk16 = ts_1c * (c > CONV_C_SUB ? CONV_C_SUB : c);
@@ -450,17 +462,18 @@ static int calc_num_tiles_conv_lrn(
 /// @param stride_x Horizontal stride.
 /// @param stride_y Vertical stride.
 /// @param u_kb Size of unified buffer in Kb.
+/// @param is_deconv 1 for deconvolution, 0 otherwise.
 static int calc_num_tiles_conv(
 		int w, int h, int c, int m, int p,
 		int pad_x0, int pad_x1, int pad_y0, int pad_y1,
 		int stride_x, int stride_y,
-		int u_kb)
+		int u_kb, int is_deconv)
 {
 	return calc_num_tiles_conv_lrn(
 		w, h, c, m, p,
 		pad_x0, pad_x1, pad_y0, pad_y1,
 		stride_x, stride_y,
-		u_kb, 1);
+		u_kb, 1, is_deconv);
 }
 
 
@@ -493,7 +506,7 @@ static int calc_num_tiles_pool(int w, int h, int c)
 static int calc_num_tiles_lrn(int w, int h, int c, int u_kb)
 {
 	return calc_num_tiles_conv_lrn(
-		w, h, c, c, 1, 0, 0, 0, 0, 1, 1, u_kb, 0);
+		w, h, c, c, 1, 0, 0, 0, 0, 1, 1, u_kb, 0, 0);
 }
 
 
@@ -534,7 +547,7 @@ static uint16_t get_conv_tiles_v0(const struct dmp_dv_kcmdraw_conv_v0 *cmd, int 
 	return calc_num_tiles_conv(
 		w, h, c, m, (kx > ky ? kx : ky) | 1,
 		pad[0], pad[1], pad[2], pad[3],
-		stride[0], stride[1], ub_size >> 10);
+		stride[0], stride[1], ub_size >> 10, is_deconv_v0(&cmd->run[0]));
 }
 
 
@@ -657,8 +670,8 @@ static void get_conv_output_size_v0(
 		const int dil_x = dil_x0 > 1 ? dil_x0 : 1;
 		const int dil_y = dil_y0 > 1 ? dil_y0 : 1;
 
-		t0_w = get_conv_out_width(in_w, (px - 1) * dil_x + 1, pad_w0, pad_w1, stride_w);
-		t0_h = get_conv_out_width(in_h, (py - 1) * dil_y + 1, pad_h0, pad_h1, stride_h);
+		t0_w = get_conv_out_width(in_w, (px - 1) * dil_x + 1, pad_w0, pad_w1, stride_w, is_deconv_v0(run));
+		t0_h = get_conv_out_width(in_h, (py - 1) * dil_y + 1, pad_h0, pad_h1, stride_h, is_deconv_v0(run));
 		// NOTE: No padding or stride in Z (depth) implemented yet.
 		t0_z = (in_z - pz + 1);
 		t0_c = m;  // number of output channels

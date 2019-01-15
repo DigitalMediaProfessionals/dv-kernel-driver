@@ -78,7 +78,7 @@ struct conv_output {
 struct conv_run {
 	uint16_t m; // Output Channels
 	// CONV
-	uint16_t conv_enable; // 1 = Enabled, 0 = Disabled, 3 = depthwise
+	uint16_t conv_enable; // 1 = Enabled, 0 = Disabled, 3 = Depthwise, 5 = Deconv, 7 = Depthwise Deconv
 	uint16_t p; // Filter Size (width = height)
 	uint16_t pz; // Filter Depth (1 in case of 2D convolution)
 	uint32_t conv_pad; // bits [7:0] = left padding, bits [15:8] = right padding, bits [23:16] = top padding, bits [31:24] = bottom padding

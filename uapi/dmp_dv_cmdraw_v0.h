@@ -34,7 +34,7 @@ struct dmp_dv_kcmdraw_conv_v0_run {
 	__u32 conv_pad;          // Bits [6:0] = left padding, bits [15:8] = right padding, bits [22:16] = top padding, bits [31:24] = bottom padding
 	__u32 pool_pad;          // Bits [7:0] = left padding, bits [15:8] = right padding, bits [23:16] = top padding, bits [31:24] = bottom padding
 	__u16 m;                 // Number of Output Channels
-	__u16 conv_enable;       // 1 = Enabled, 0 = Disabled, 3 = Depthwise
+	__u16 conv_enable;       // 1 = Enabled, 0 = Disabled, 3 = Depthwise, 5 = Deconv, 7 = Depthwise Deconv
 	__u16 p;                 // Filter Size (width = height)
 	__u16 pz;                // Filter Depth (1 in case of 2D convolution)
 	__u16 conv_stride;       // Bits [7:0] = X stride, bits [15:8] = Y stride

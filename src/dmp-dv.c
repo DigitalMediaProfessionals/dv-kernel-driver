@@ -922,5 +922,5 @@ module_exit(drm_exit);
 
 MODULE_DESCRIPTION("DV core driver");
 MODULE_AUTHOR("Digital Media Professionals Inc.");
-MODULE_VERSION("7.0.20181214");
+MODULE_VERSION("7.0.20190111");
 MODULE_LICENSE("GPL");
