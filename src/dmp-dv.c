@@ -74,6 +74,9 @@ uint32_t MAX_CONV_KERNEL_SIZE = 7;
 uint32_t MAX_FC_VECTOR_SIZE = 16384;
 static uint32_t conv_svn_version = 0;
 
+static const phys_addr_t bar_phys_r5ipi = 0xff340000;
+static void *bar_logi_r5ipi = 0;
+
 struct dv_cmd_work_item {
 	struct dmp_dev_private *dev_pri;
 	void (*run_func)(struct dmp_cmb *, void *);
@@ -112,6 +115,24 @@ struct drm_dev {
 
 static struct class *dddrm_class = NULL;
 static DEFINE_MUTEX(dv_firmware_lock);
+
+static irqreturn_t handle_int_r5(int irq, void *dev_id)
+{
+	struct dmp_dev *dev = dev_id;
+	uint32_t val;
+
+	val = ioread32((void __iomem *)bar_logi_r5ipi + 0x10);
+	if (!(val & 0x100))
+		return IRQ_NOT_HANDLED;
+	spin_lock(&dev->int_exclusive);
+	iowrite32(0x100, (void __iomem *)bar_logi_r5ipi + 0x10);
+
+	++dev->hw_id;
+	wake_up_interruptible(&dev->wait_queue);
+	spin_unlock(&dev->int_exclusive);
+
+	return IRQ_HANDLED;
+}
 
 static irqreturn_t handle_int(int irq, void *dev_id)
 {
@@ -606,6 +627,10 @@ int drm_register_chrdev(struct drm_dev *drm_dev)
 			}
 
 			rIRQ = drm_dev->subdev[i].irqno;
+			if (i == 0)
+			err = request_irq(rIRQ, handle_int_r5, IRQF_SHARED,
+					  DRM_DEV_NAME, &(drm_dev->subdev[i]));
+			else
 			err = request_irq(rIRQ, handle_int, IRQF_SHARED,
 					  DRM_DEV_NAME, &(drm_dev->subdev[i]));
 			if (err) {
@@ -780,6 +805,7 @@ static int drm_dev_probe(struct platform_device *pdev)
 			drm_dev->subdev[i].hw_id = 0;
 		}
 	}
+	bar_logi_r5ipi = ioremap_nocache(bar_phys_r5ipi, 0x1000);
 
 	// set firmware private attribute to conv subdev
 	drm_firmware_attr.private = &drm_dev->subdev[0];
@@ -858,6 +884,7 @@ static int drm_dev_remove(struct platform_device *pdev)
 
 		platform_set_drvdata(pdev, NULL);
 	}
+	iounmap(bar_logi_r5ipi);
 
 	dev_dbg(&pdev->dev, "remove successful\n");
 	return 0;
