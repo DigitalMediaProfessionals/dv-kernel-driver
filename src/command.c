@@ -478,7 +478,7 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 
 		if ((cmd->z > 1)
 			|| (cmd->run[i].pz > 1)
-			|| (cmd->run[i].conv_dilation))  // TODO: add more checks: no maxpool_with_argmax, no unpool_with_argmax.
+			|| (cmd->run[i].conv_dilation & 0xfefe))  // TODO: add more checks: no maxpool_with_argmax, no unpool_with_argmax.
 			valid_multi_run = 0;
 	}
 	if (output_buf_size < total_output_size ||
