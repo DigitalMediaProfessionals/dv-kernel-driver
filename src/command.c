@@ -307,6 +307,8 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 	struct conv_data_size conv_size;
 	uint32_t weight_size = 0, total_output_size = 0, ubuf_size;
 	int ret, valid_multi_run = 1;
+	uint16_t dil_x, dil_y;
+	int in_u_b, out_u_b;
 
 	// there should be at least one run
 	if (size < sizeof(struct dmp_dv_kcmdraw_conv_v0) - 31 *
@@ -335,6 +337,19 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 		kfree(cmd);
 		pr_warn(DRM_DEV_NAME ": Invalid runs=%u\n", runs);
 		return -EINVAL;
+	}
+
+        // Patch dilation
+        for (i = 0; i < runs; ++i) {
+		if (!cmd->run[i].conv_enable)
+			continue;
+		dil_x = cmd->run[i].conv_dilation & 0xFF;
+		dil_y = (cmd->run[i].conv_dilation >> 8) & 0xFF;
+		dil_x = dil_x < 1 ? 1 : dil_x;
+		dil_y = dil_y < 1 ? 1 : dil_y;
+		cmd->run[i].conv_dilation = dil_x | (dil_y << 8);
+		if ((dil_x > 1) || (dil_y > 1))
+			valid_multi_run = 0;
 	}
 
 	init_conv_input_size_v0(cmd, &conv_size);
@@ -397,17 +412,22 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 	conv->input.c = cmd->c;
 	conv->input.input_base_addr = input_base_addr;
 	conv->input.input_circular_offset = cmd->input_circular_offset;
-	conv->input.tiles = get_conv_tiles_v0(cmd, UNIFIED_BUFFER_SIZE);
+	conv->input.tiles = get_conv_tiles_v0(
+		cmd, UNIFIED_BUFFER_SIZE, &in_u_b, &out_u_b);
 	if (!conv->input.tiles) {
 		kfree(cmd);
-		pr_warn(DRM_DEV_NAME ": Could not determine tiles for: %dx%dx%d\n",
-			(int)conv->input.w, (int)conv->input.h,
-			(int)conv->input.c);
+		pr_warn(DRM_DEV_NAME ": Required at least %d bytes of unified buffer for w=%d h=%d c=%d m=%d p=0x%04x dil=0x%04x\n",
+			in_u_b + out_u_b,
+			(int)cmd->w, (int)cmd->h, (int)cmd->c,
+			(int)cmd->run[0].m, (unsigned)cmd->run[0].p,
+			(unsigned)cmd->run[0].conv_dilation);
 		return -EINVAL;
 	}
-	/*pr_info(DRM_DEV_NAME ": tiles=%d for %dx%dx%d\n",
-	  	  (int)conv->input.tiles, (int)conv->input.w,
-		  (int)conv->input.h, (int)conv->input.c);*/
+	/*pr_info(DRM_DEV_NAME ": tiles=%d in_u_b=%d out_u_b=%d for w=%d h=%d c=%d m=%d p=0x%04x dil=0x%04x\n",
+		(int)conv->input.tiles, in_u_b, out_u_b,
+		(int)cmd->w, (int)cmd->h, (int)cmd->c,
+		(int)cmd->run[0].m, (unsigned)cmd->run[0].p,
+		(unsigned)cmd->run[0].conv_dilation);*/
 	if (conv->input.tiles != 1)
 		valid_multi_run = 0;
 
@@ -476,9 +496,7 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 			return -EINVAL;
 		}
 
-		if ((cmd->z > 1)
-			|| (cmd->run[i].pz > 1)
-			|| (cmd->run[i].conv_dilation))  // TODO: add more checks: no maxpool_with_argmax, no unpool_with_argmax.
+		if ((cmd->z > 1) || (cmd->run[i].pz > 1))  // TODO: add more checks: no maxpool_with_argmax, no unpool_with_argmax.
 			valid_multi_run = 0;
 	}
 	if (output_buf_size < total_output_size ||
@@ -514,8 +532,8 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 	pr_info(DRM_DEV_NAME "<<<\n");*/
 	/*if (conv->run[0].lrn)
 	  	pr_info(DRM_DEV_NAME ": LRN tiles: %dx%dx%d: %d\n",
-	(int)conv->input.w, (int)conv->input.h, (int)conv->input.c,
-	(int)conv->input.tiles);*/
+			(int)conv->input.w, (int)conv->input.h,
+			(int)conv->input.c, (int)conv->input.tiles);*/
 	cmb_node->size += cmd_size;
 
 	kfree(cmd);
