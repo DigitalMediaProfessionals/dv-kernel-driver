@@ -242,7 +242,7 @@ static int get_dma_addr(struct device *dev, struct dmp_cmb *cmb,
 	for_each_sg (obj->sgt->sgl, sg, obj->sgt->nents, i) {
 		obj->dma_addr = sg_dma_address(sg);
 		obj->buf_size = sg_dma_len(sg);
-#ifdef CONFIG_ARCH_DMA_ADDR_T_64BIT
+#if IS_ENABLED(CONFIG_ARCH_DMA_ADDR_T_64BIT)
 		if (obj->dma_addr + obj->buf_size > 4294967296ull) {
 			pr_warn(DRM_DEV_NAME
 				": dma_addr=%llu buf_size=%llu lies in high memory\n",

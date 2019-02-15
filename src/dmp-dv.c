@@ -72,6 +72,7 @@ static const char *subdev_name[DRM_NUM_SUBDEV] = {
 uint32_t UNIFIED_BUFFER_SIZE = DEF_UNIFIED_BUFFER_SIZE_KB << 10;
 uint32_t MAX_CONV_KERNEL_SIZE = 7;
 uint32_t MAX_FC_VECTOR_SIZE = 16384;
+static uint32_t conv_svn_version = 0;
 
 struct dv_cmd_work_item {
 	struct dmp_dev_private *dev_pri;
@@ -284,21 +285,29 @@ static struct file_operations drm_file_operations = {
 };
 
 static ssize_t conv_freq_show(struct device *dev,
-			      struct device_attribute *attr,
-			      char *buf)
+                              struct device_attribute *attr,
+                              char *buf)
 {
-	struct drm_dev *drm_dev = dev_get_drvdata(dev);
-	int freq = ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x424));
-	return scnprintf(buf, PAGE_SIZE, "%d\n", freq & 0xFF);
+        struct drm_dev *drm_dev = dev_get_drvdata(dev);
+        int freq = ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x424));
+        freq &= 0xFF;
+        return scnprintf(buf, PAGE_SIZE, "%d\n", freq);
 }
 
 static ssize_t fc_freq_show(struct device *dev,
-			    struct device_attribute *attr,
-			    char *buf)
+                            struct device_attribute *attr,
+                            char *buf)
 {
-	struct drm_dev *drm_dev = dev_get_drvdata(dev);
-	int freq = ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x424));
-	return scnprintf(buf, PAGE_SIZE, "%d\n", (freq >> 8) & 0xFF);
+        struct drm_dev *drm_dev = dev_get_drvdata(dev);
+        int freq = ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x424));
+        freq = (freq >> 8) & 0xFF;
+#if (!IS_ENABLED(CONFIG_64BIT)) && IS_ENABLED(CONFIG_ARM)
+        if (!freq) {  // Workaround for the specific revision of ZIA-C2
+                if (conv_svn_version == 83)
+                        freq = 56;
+        }
+#endif
+        return scnprintf(buf, PAGE_SIZE, "%d\n", freq);
 }
 
 static ssize_t conv_kick_count_show(struct device *dev,
@@ -351,8 +360,8 @@ static ssize_t loop_control_store(struct device *dev,
 }
 
 static ssize_t max_fc_vector_size_show(struct device *dev,
-				    struct device_attribute *attr,
-				    char *buf)
+				       struct device_attribute *attr,
+				       char *buf)
 {
 	return scnprintf(buf, PAGE_SIZE, "%d\n", MAX_FC_VECTOR_SIZE);
 }
@@ -413,9 +422,7 @@ static ssize_t svn_version_show(struct device *dev,
 			        struct device_attribute *attr,
 			        char *buf)
 {
-	struct drm_dev *drm_dev = dev_get_drvdata(dev);
-	int version = ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x144));
-	return scnprintf(buf, PAGE_SIZE, "%d\n", version);
+	return scnprintf(buf, PAGE_SIZE, "%d\n", conv_svn_version);
 }
 
 static ssize_t mac_num_show(struct device *dev,
@@ -785,6 +792,10 @@ static int drm_dev_probe(struct platform_device *pdev)
 		ubuf_size = ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x148));
 		if (ubuf_size > 0)
 			UNIFIED_BUFFER_SIZE = ubuf_size;
+
+		// Get SVN version
+		conv_svn_version = ioread32(
+			REG_IO_ADDR((&drm_dev->subdev[0]), 0x144));
 	}
 
 	// Set fc to command list mode
@@ -922,5 +933,5 @@ module_exit(drm_exit);
 
 MODULE_DESCRIPTION("DV core driver");
 MODULE_AUTHOR("Digital Media Professionals Inc.");
-MODULE_VERSION("7.0.20190214");
+MODULE_VERSION("7.0.20190215");
 MODULE_LICENSE("GPL");
