@@ -48,6 +48,7 @@
 #include "../uapi/dmp-dv.h"
 
 #define REG_IO_ADDR(DV, OF) ((void __iomem *)(DV->bar_logical) + OF)
+#define REG_BAR_ADDR(BAR, OF) ((void __iomem *)(BAR) + OF)
 
 #ifndef USE_DEVTREE
 static int irq_no[DRM_NUM_SUBDEV] = {48, 49};
@@ -75,7 +76,9 @@ uint32_t MAX_FC_VECTOR_SIZE = 16384;
 static uint32_t conv_svn_version = 0;
 
 static const phys_addr_t bar_phys_r5ipi = 0xff340000;
-static void *bar_logi_r5ipi = 0;
+static const phys_addr_t bar_phys_r5shm = 0x7ed00000;
+void *bar_logi_r5ipi = 0;
+void *bar_logi_r5shm = 0;
 
 struct dv_cmd_work_item {
 	struct dmp_dev_private *dev_pri;
@@ -121,11 +124,11 @@ static irqreturn_t handle_int_r5(int irq, void *dev_id)
 	struct dmp_dev *dev = dev_id;
 	uint32_t val;
 
-	val = ioread32((void __iomem *)bar_logi_r5ipi + 0x10);
-	if (!(val & 0x100))
-		return IRQ_NOT_HANDLED;
+	val = ioread32(REG_BAR_ADDR(bar_logi_r5ipi, IPI_ISR_OFFSET));
+	if (!(val & IPI_MASK))
+		return IRQ_NONE;
 	spin_lock(&dev->int_exclusive);
-	iowrite32(0x100, (void __iomem *)bar_logi_r5ipi + 0x10);
+	iowrite32(IPI_MASK, REG_BAR_ADDR(bar_logi_r5ipi, IPI_ISR_OFFSET));
 
 	++dev->hw_id;
 	wake_up_interruptible(&dev->wait_queue);
@@ -167,8 +170,8 @@ static int wait_cmd_id(struct dmp_dev *dev, uint64_t cmd_id)
 	if (ret > 0)
 		return 0;
 	else if (ret == 0) {
-		pr_warn(DRM_DEV_NAME ": timeout: cmd_id=%lld, DEBUG_HW_0=%08X\n",
-			(long long)cmd_id, ioread32(REG_IO_ADDR(dev, 0x00E0)));
+		pr_warn(DRM_DEV_NAME ": timeout: cmd_id=%lld\n",
+			(long long)cmd_id);
 		return -EBUSY;
 	}
 	return ret;
@@ -310,7 +313,7 @@ static ssize_t conv_freq_show(struct device *dev,
                               char *buf)
 {
         struct drm_dev *drm_dev = dev_get_drvdata(dev);
-        int freq = ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x424));
+        int freq = 250;//ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x424));
         freq &= 0xFF;
         return scnprintf(buf, PAGE_SIZE, "%d\n", freq);
 }
@@ -320,7 +323,7 @@ static ssize_t fc_freq_show(struct device *dev,
                             char *buf)
 {
         struct drm_dev *drm_dev = dev_get_drvdata(dev);
-        int freq = ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x424));
+        int freq = (100 << 8);//ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x424));
         freq = (freq >> 8) & 0xFF;
 #if (!IS_ENABLED(CONFIG_64BIT)) && IS_ENABLED(CONFIG_ARM)
         if (!freq) {  // Workaround for the specific revision of ZIA-C2
@@ -336,7 +339,7 @@ static ssize_t conv_kick_count_show(struct device *dev,
 				    char *buf)
 {
 	struct drm_dev *drm_dev = dev_get_drvdata(dev);
-	int kick_count = ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x100));
+	int kick_count = 0;//ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x100));
 	return scnprintf(buf, PAGE_SIZE, "%d\n", kick_count);
 }
 
@@ -361,7 +364,7 @@ static ssize_t loop_control_show(struct device *dev,
 	struct drm_dev *drm_dev = dev_get_drvdata(dev);
 	unsigned int loop_control;
 
-	loop_control = ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x48));
+	loop_control = 0;//ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x48));
 	return scnprintf(buf, PAGE_SIZE, "%d\n", loop_control);
 }
 
@@ -376,7 +379,7 @@ static ssize_t loop_control_store(struct device *dev,
 	ret = kstrtouint(buf, 0, &loop_control);
 	if (ret < 0)
 		return ret;
-	iowrite32(loop_control, REG_IO_ADDR((&drm_dev->subdev[0]), 0x48));
+	//iowrite32(loop_control, REG_IO_ADDR((&drm_dev->subdev[0]), 0x48));
 	return len;
 }
 
@@ -435,7 +438,7 @@ static ssize_t hw_version_show(struct device *dev,
 			       char *buf)
 {
 	struct drm_dev *drm_dev = dev_get_drvdata(dev);
-	int version = ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x140));
+	int version = 0x7000;//ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x140));
 	return scnprintf(buf, PAGE_SIZE, "%04x\n", version & 0xffff);
 }
 
@@ -451,7 +454,7 @@ static ssize_t mac_num_show(struct device *dev,
 			    char *buf)
 {
 	struct drm_dev *drm_dev = dev_get_drvdata(dev);
-	int param = ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x14C));
+	int param = 576;//ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x14C));
 	return scnprintf(buf, PAGE_SIZE, "%d\n", param);
 }
 
@@ -460,7 +463,7 @@ static ssize_t max_input_size_show(struct device *dev,
 				   char *buf)
 {
 	struct drm_dev *drm_dev = dev_get_drvdata(dev);
-	int param = ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x150));
+	int param = 1024;//ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x150));
 	return scnprintf(buf, PAGE_SIZE, "%d\n", param);
 }
 
@@ -469,7 +472,7 @@ static ssize_t input_bytes_show(struct device *dev,
 				char *buf)
 {
 	struct drm_dev *drm_dev = dev_get_drvdata(dev);
-	unsigned long long param = ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x180));
+	unsigned long long param = 0;//ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x180));
 	return scnprintf(buf, PAGE_SIZE, "%llu\n", param << 4);
 }
 
@@ -478,7 +481,7 @@ static ssize_t output_bytes_show(struct device *dev,
 				 char *buf)
 {
 	struct drm_dev *drm_dev = dev_get_drvdata(dev);
-	unsigned long long param = ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x184));
+	unsigned long long param = 0;//ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x184));
 	return scnprintf(buf, PAGE_SIZE, "%llu\n", param << 4);
 }
 
@@ -487,7 +490,7 @@ static ssize_t weights_bytes_show(struct device *dev,
 				  char *buf)
 {
 	struct drm_dev *drm_dev = dev_get_drvdata(dev);
-	unsigned long long param = ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x188));
+	unsigned long long param = 0;//ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x188));
 	return scnprintf(buf, PAGE_SIZE, "%llu\n", param << 4);
 }
 
@@ -806,31 +809,40 @@ static int drm_dev_probe(struct platform_device *pdev)
 		}
 	}
 	bar_logi_r5ipi = ioremap_nocache(bar_phys_r5ipi, 0x1000);
+	/* disable IPI interrupt */
+	iowrite32(IPI_MASK, REG_BAR_ADDR(bar_logi_r5ipi, IPI_IDR_OFFSET));
+	/* clear old IPI interrupt */
+	iowrite32(IPI_MASK, REG_BAR_ADDR(bar_logi_r5ipi, IPI_ISR_OFFSET));
+	/* Enable IPI interrupt */
+	iowrite32(IPI_MASK, REG_BAR_ADDR(bar_logi_r5ipi, IPI_IER_OFFSET));
+	iowrite32(IPI_MASK, REG_BAR_ADDR(bar_logi_r5ipi, IPI_IER_OFFSET));
+	
+	bar_logi_r5shm = ioremap_nocache(bar_phys_r5shm, 0x1000000);
 
 	// set firmware private attribute to conv subdev
 	drm_firmware_attr.private = &drm_dev->subdev[0];
 
 	// Set conv to command list mode
 	if (subdev_phys_idx[0] >= 0) {
-		iowrite32(1, REG_IO_ADDR((&drm_dev->subdev[0]), 0x40C));
+		//iowrite32(1, REG_IO_ADDR((&drm_dev->subdev[0]), 0x40C));
 
 		// Get unified buffer size from register
-		ubuf_size = ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x148));
+		ubuf_size = 1024;//ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x148));
 		if (ubuf_size > 0)
 			UNIFIED_BUFFER_SIZE = ubuf_size;
 
 		// Get SVN version
-		conv_svn_version = ioread32(
-			REG_IO_ADDR((&drm_dev->subdev[0]), 0x144));
+		conv_svn_version = 83;//ioread32(
+			//REG_IO_ADDR((&drm_dev->subdev[0]), 0x144));
 	}
 
 	// Set fc to command list mode
-	if (subdev_phys_idx[1] >= 0)
-		iowrite32(1, REG_IO_ADDR((&drm_dev->subdev[1]), 0x28));
+	//if (subdev_phys_idx[1] >= 0)
+	//	iowrite32(1, REG_IO_ADDR((&drm_dev->subdev[1]), 0x28));
 
 	// Set firmware to use ROM
-	if (subdev_phys_idx[0] >= 0)
-		iowrite32(1, REG_IO_ADDR((&drm_dev->subdev[0]), 0x44));
+	//if (subdev_phys_idx[0] >= 0)
+	//	iowrite32(1, REG_IO_ADDR((&drm_dev->subdev[0]), 0x44));
 
 	// Convert unified buffer size from kilobytes to bytes
 	if ((!UNIFIED_BUFFER_SIZE) || (UNIFIED_BUFFER_SIZE > 2097151)) {  // in KBytes
@@ -885,6 +897,7 @@ static int drm_dev_remove(struct platform_device *pdev)
 		platform_set_drvdata(pdev, NULL);
 	}
 	iounmap(bar_logi_r5ipi);
+	iounmap(bar_logi_r5shm);
 
 	dev_dbg(&pdev->dev, "remove successful\n");
 	return 0;

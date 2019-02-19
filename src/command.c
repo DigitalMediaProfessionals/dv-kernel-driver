@@ -601,9 +601,10 @@ void dv_run_conv_command(struct dmp_cmb *cmb, void *bar_logical)
 
 	barrier();
 
-	iowrite32(prev_addr, REG_IO_ADDR(bar_logical, 0x0400));
-	iowrite32(prev_size / 8, REG_IO_ADDR(bar_logical, 0x0404));
-	iowrite32(0x1, REG_IO_ADDR(bar_logical, 0x0408));
+	iowrite32(prev_addr, REG_IO_ADDR(bar_logi_r5shm, 0x0));
+	iowrite32(prev_size / 8, REG_IO_ADDR(bar_logi_r5shm, 0x4));
+	iowrite32(0x1, REG_IO_ADDR(bar_logi_r5shm, 0x8));
+	iowrite32(IPI_MASK, REG_IO_ADDR(bar_logi_r5ipi, IPI_TRIG_OFFSET));
 }
 
 static int dv_convert_fc_v0(struct device *dev, struct dmp_cmb *cmb,
