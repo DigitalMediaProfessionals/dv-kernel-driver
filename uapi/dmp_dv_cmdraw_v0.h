@@ -46,7 +46,7 @@ struct dmp_dv_kcmdraw_conv_v0_run {
 	__u16 pool_stride;       // Bits [7:0] = X stride, bits [15:8] = Y stride
 	__u16 actfunc;           // Activation Function: 0 = None, 1 = Tanh, 2 = Leaky ReLU, 3 = Sigmoid, 4 = PReLU, 5 = ELU, 6 = ReLU6
 	__u16 actfunc_param;     // Leaky ReLU parameter in FP16
-	__u16 rectifi_en;        // Rectification, i.e. max(0, x) (NOTE: Can be applied after non-ReLU activation function)
+	__u16 rectifi_en;        // Rectification, i.e. abs(x) (NOTE: Can be applied after non-ReLU activation function)
 	__u16 lrn;               // Bits [0]: 1 = LRN enable, 0 = LRN disable, [1]: 1 = incl. power func, 0 = excl., [8:11]: x^2 scale factor log2
 	__u16 rsvd;              // padding to 64-bit size
 };
