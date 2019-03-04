@@ -51,32 +51,36 @@
 #define REG_BAR_ADDR(BAR, OF) ((void __iomem *)(BAR) + OF)
 
 #ifndef USE_DEVTREE
-static int irq_no[DRM_NUM_SUBDEV] = {48, 49};
+static int irq_no[DRM_NUM_SUBDEV] = {48};
 static unsigned int reg_base = 0x80000000;
+static const uint32_t bar_phys_r5ipi = 0xff340000;
+static const uint32_t bar_phys_r5shm = 0x7ed00000;
+static const uint32_t r5ipi_map_size = 0x1000;
+static const uint32_t r5shm_map_size = 0x1000000;
+#else
+static uint32_t bar_phys_r5ipi = 0;
+static uint32_t bar_phys_r5shm = 0;
+static uint32_t r5ipi_map_size = 0;
+static uint32_t r5shm_map_size = 0;
 #endif
 static unsigned int reg_offset[DRM_NUM_SUBDEV] = {
 	UINT_MAX,
 	UINT_MAX,
-	UINT_MAX,
 	UINT_MAX
 };
-static unsigned int reg_size[DRM_NUM_SUBDEV] = {0x1000, 0x1000, 0x1000, 0x1000};
-static int irq_addr[DRM_NUM_SUBDEV] = {0x420, 0x20, 0x20, 0x20};
+static unsigned int reg_size[DRM_NUM_SUBDEV] = {0x1000, 0x1000, 0x1000};
+static int irq_addr[DRM_NUM_SUBDEV] = {IPI_ISR_OFFSET, 0x20, 0x20};
 static const char *subdev_name[DRM_NUM_SUBDEV] = {
 	"conv",
-	"fc",
 	"ipu",
 	"maximizer"
 };
 
-#define DEF_UNIFIED_BUFFER_SIZE_KB 640
+#define DEF_UNIFIED_BUFFER_SIZE_KB 1024
 uint32_t UNIFIED_BUFFER_SIZE = DEF_UNIFIED_BUFFER_SIZE_KB << 10;
 uint32_t MAX_CONV_KERNEL_SIZE = 7;
-uint32_t MAX_FC_VECTOR_SIZE = 16384;
 static uint32_t conv_svn_version = 0;
 
-static const phys_addr_t bar_phys_r5ipi = 0xff340000;
-static const phys_addr_t bar_phys_r5shm = 0x7ed00000;
 void *bar_logi_r5ipi = 0;
 void *bar_logi_r5shm = 0;
 
@@ -239,14 +243,12 @@ static int drm_release(struct inode *inode, struct file *file)
 static int (*cmd_func[DRM_NUM_SUBDEV])(struct device *, struct dmp_cmb *,
 				       struct dmp_dv_kcmd *) = {
 	dv_convert_conv_command,
-	dv_convert_fc_command,
 	dv_convert_ipu_command,
 	dv_convert_maximizer_command,
 };
 
 static void (*run_func[DRM_NUM_SUBDEV])(struct dmp_cmb *, void *) = {
 	dv_run_conv_command,
-	dv_run_fc_command,
 	dv_run_ipu_command,
 	dv_run_maximizer_command,
 };
@@ -318,22 +320,6 @@ static ssize_t conv_freq_show(struct device *dev,
         return scnprintf(buf, PAGE_SIZE, "%d\n", freq);
 }
 
-static ssize_t fc_freq_show(struct device *dev,
-                            struct device_attribute *attr,
-                            char *buf)
-{
-        struct drm_dev *drm_dev = dev_get_drvdata(dev);
-        int freq = (100 << 8);//ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x424));
-        freq = (freq >> 8) & 0xFF;
-#if (!IS_ENABLED(CONFIG_64BIT)) && IS_ENABLED(CONFIG_ARM)
-        if (!freq) {  // Workaround for the specific revision of ZIA-C2
-                if (conv_svn_version == 83)
-                        freq = 56;
-        }
-#endif
-        return scnprintf(buf, PAGE_SIZE, "%d\n", freq);
-}
-
 static ssize_t conv_kick_count_show(struct device *dev,
 				    struct device_attribute *attr,
 				    char *buf)
@@ -355,82 +341,6 @@ static ssize_t max_kernel_size_show(struct device *dev,
 				    char *buf)
 {
 	return scnprintf(buf, PAGE_SIZE, "%d\n", MAX_CONV_KERNEL_SIZE);
-}
-
-static ssize_t loop_control_show(struct device *dev,
-				 struct device_attribute *attr,
-				 char *buf)
-{
-	struct drm_dev *drm_dev = dev_get_drvdata(dev);
-	unsigned int loop_control;
-
-	loop_control = 0;//ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x48));
-	return scnprintf(buf, PAGE_SIZE, "%d\n", loop_control);
-}
-
-static ssize_t loop_control_store(struct device *dev, 
-				  struct device_attribute *attr,
-				  const char *buf, size_t len)
-{
-	struct drm_dev *drm_dev = dev_get_drvdata(dev);
-	unsigned int loop_control;
-	int ret;
-
-	ret = kstrtouint(buf, 0, &loop_control);
-	if (ret < 0)
-		return ret;
-	//iowrite32(loop_control, REG_IO_ADDR((&drm_dev->subdev[0]), 0x48));
-	return len;
-}
-
-static ssize_t max_fc_vector_size_show(struct device *dev,
-				       struct device_attribute *attr,
-				       char *buf)
-{
-	return scnprintf(buf, PAGE_SIZE, "%d\n", MAX_FC_VECTOR_SIZE);
-}
-
-static ssize_t drm_firmware_write(struct file *filp, struct kobject *kobj,
-				  struct bin_attribute *bin_attr,
-				  char *buf, loff_t pos, size_t count)
-{
-	struct dmp_dev *subdev = bin_attr->private;
-	unsigned int len = count / 4;
-	uint32_t *f_buf = (uint32_t*)buf;
-
-	if (!subdev)
-		return -ENODEV;
-
-	if ((pos + count) > DRM_MAX_FIRMWARE_SIZE)
-		return -EINVAL;
-
-	mutex_lock(&dv_firmware_lock);
-
-	if (pos == 0) {
-		if (count < 10) {
-			// Set firmware to use ROM
-			iowrite32(1, REG_IO_ADDR(subdev, 0x44));
-			mutex_unlock(&dv_firmware_lock);
-			pr_info(DRM_DEV_NAME ": Switch firmware to use ROM.\n");
-			return count;
-		} else {
-			// Set firmware to use ROM
-			iowrite32(0, REG_IO_ADDR(subdev, 0x44));
-		}
-	}
-
-	pr_info(DRM_DEV_NAME ": Updating firmware 0x%04x..0x%04x.\n",
-		(unsigned int)pos, (unsigned int)(pos + count));
-
-	iowrite32(pos, REG_IO_ADDR(subdev, 0x80));
-	while (len--) {
-		iowrite32(*f_buf, REG_IO_ADDR(subdev, 0x84));
-		++f_buf;
-	}
-
-	mutex_unlock(&dv_firmware_lock);
-
-	return count;
 }
 
 static ssize_t hw_version_show(struct device *dev,
@@ -498,10 +408,6 @@ static DEVICE_ATTR_RO(conv_freq);
 static DEVICE_ATTR_RO(conv_kick_count);
 static DEVICE_ATTR_RO(ub_size);
 static DEVICE_ATTR_RO(max_kernel_size);
-static DEVICE_ATTR_RW(loop_control);
-
-static DEVICE_ATTR_RO(fc_freq);
-static DEVICE_ATTR_RO(max_fc_vector_size);
 
 static DEVICE_ATTR_RO(hw_version);
 static DEVICE_ATTR_RO(svn_version);
@@ -521,50 +427,18 @@ static struct attribute *drm_conv_attrs[] = {
 	&dev_attr_svn_version.attr,
 	&dev_attr_mac_num.attr,
 	&dev_attr_max_input_size.attr,
-	&dev_attr_loop_control.attr,
 	&dev_attr_input_bytes.attr,
 	&dev_attr_output_bytes.attr,
 	&dev_attr_weights_bytes.attr,
 	NULL
 };
 
-static struct attribute *drm_fc_attrs[] = {
-	&dev_attr_fc_freq.attr,
-	&dev_attr_max_fc_vector_size.attr,
-	NULL
-};
-
-static struct bin_attribute drm_firmware_attr = {
-	.attr =
-		{
-			.name = "firmware",
-			.mode = S_IWUSR,
-		},
-	.size = DRM_MAX_FIRMWARE_SIZE,
-	.write = drm_firmware_write,
-};
-
-static struct bin_attribute *drm_bin_attrs[] = {
-	&drm_firmware_attr,
-	NULL
-};
-
 static const struct attribute_group drm_conv_attr_group = {
 	.attrs = drm_conv_attrs,
-	.bin_attrs = drm_bin_attrs,
-};
-
-static const struct attribute_group drm_fc_attr_group = {
-	.attrs = drm_fc_attrs,
 };
 
 static const struct attribute_group *drm_conv_attr_groups[] = {
 	&drm_conv_attr_group,
-	NULL
-};
-
-static const struct attribute_group *drm_fc_attr_groups[] = {
-	&drm_fc_attr_group,
 	NULL
 };
 
@@ -578,7 +452,6 @@ static const struct attribute_group *drm_maximizer_attr_groups[] = {
 
 static const struct attribute_group **drm_attr_groups[DRM_NUM_SUBDEV] = {
 	drm_conv_attr_groups,
-	drm_fc_attr_groups,
 	drm_ipu_attr_groups,
 	drm_maximizer_attr_groups,
 };
@@ -630,12 +503,13 @@ int drm_register_chrdev(struct drm_dev *drm_dev)
 			}
 
 			rIRQ = drm_dev->subdev[i].irqno;
-			if (i == 0)
-			err = request_irq(rIRQ, handle_int_r5, IRQF_SHARED,
+			if (i == 0) {
+				err = request_irq(rIRQ, handle_int_r5, IRQF_SHARED,
 					  DRM_DEV_NAME, &(drm_dev->subdev[i]));
-			else
-			err = request_irq(rIRQ, handle_int, IRQF_SHARED,
+			} else {
+				err = request_irq(rIRQ, handle_int, IRQF_SHARED,
 					  DRM_DEV_NAME, &(drm_dev->subdev[i]));
+			}
 			if (err) {
 				device_destroy(dddrm_class,
 					       MKDEV(driver_major, i));
@@ -715,8 +589,8 @@ static int drm_dev_probe(struct platform_device *pdev)
 	struct drm_dev *drm_dev;
 #ifdef USE_DEVTREE
 	struct device_node *dev_node, *parent_node;
-	u32 addr_cells;
-	unsigned int reg_base, reg_index;
+	u32 addr_cells, size_cells;
+	unsigned int reg_base, reg_index, size_index;
 	const char * sys_str = 0x00;
 	int subdev_phys_idx[DRM_NUM_SUBDEV] = {-1, -1, -1};
 	int ret = 0;
@@ -745,32 +619,28 @@ static int drm_dev_probe(struct platform_device *pdev)
 	parent_node = of_get_parent(dev_node);
 	if (parent_node) {
 		of_property_read_u32(parent_node, "#address-cells", &addr_cells);
+		of_property_read_u32(parent_node, "#size-cells", &size_cells);
 		reg_index = addr_cells - 1;
+		size_index = reg_index + size_cells;
 		of_node_put(parent_node);
 	}
 	else {
 		reg_index = 0;
+		size_index = 1;
 	}
 	of_property_read_u32_index(dev_node, "reg", reg_index, &reg_base);
 	// Try to read device dependent properties
 	UNIFIED_BUFFER_SIZE = 0;
 	of_property_read_u32(dev_node, "ubuf-size", &UNIFIED_BUFFER_SIZE);
 	of_property_read_u32(dev_node, "max-conv-size", &MAX_CONV_KERNEL_SIZE);
-	of_property_read_u32(dev_node, "max-fc-vector", &MAX_FC_VECTOR_SIZE);
 	ret = of_property_read_string(dev_node, "system", &sys_str);
 	if (ret == -EINVAL /* property does not exist */
-		|| strcmp(sys_str, "CONV,FC") == 0) {
+		|| strcmp(sys_str, "CONV") == 0) {
 		subdev_phys_idx[0] = 0;
-		subdev_phys_idx[1] = 1;
-	} else if (strcmp(sys_str, "CONV,FC,MX,IPU") == 0) {
-		subdev_phys_idx[0] = 0;
-		subdev_phys_idx[1] = 1;
-		subdev_phys_idx[2] = 3;
-		subdev_phys_idx[3] = 2;
 	} else if (strcmp(sys_str, "CONV,MX,IPU") == 0) {
 		subdev_phys_idx[0] = 0;
-		subdev_phys_idx[2] = 2;
-		subdev_phys_idx[3] = 1;
+		subdev_phys_idx[1] = 2;
+		subdev_phys_idx[2] = 1;
 	} else {
 		err = -EINVAL;
 		pr_err(DRM_DEV_NAME ": %s is not valid DV system.\n", sys_str);
@@ -808,7 +678,29 @@ static int drm_dev_probe(struct platform_device *pdev)
 			drm_dev->subdev[i].hw_id = 0;
 		}
 	}
-	bar_logi_r5ipi = ioremap_nocache(bar_phys_r5ipi, 0x1000);
+	
+#ifdef USE_DEVTREE
+	// Get IPI and SHM base address
+	dev_node = of_find_node_by_name(NULL, "ipi");
+	if (dev_node == NULL) {
+		pr_err(DRM_DEV_NAME ": Can't find ipi_amp in device tree.\n");
+		goto fail_dt_system;
+	}
+	of_property_read_u32_index(dev_node, "reg", reg_index, &bar_phys_r5ipi);
+	of_property_read_u32_index(dev_node, "reg", size_index, &r5ipi_map_size);
+	of_node_put(dev_node);
+
+	dev_node = of_find_node_by_name(NULL, "shm");
+	if (dev_node == NULL) {
+		pr_err(DRM_DEV_NAME ": Can't find shm0 in device tree.\n");
+		goto fail_dt_system;
+	}
+	of_property_read_u32_index(dev_node, "reg", reg_index, &bar_phys_r5shm);
+	of_property_read_u32_index(dev_node, "reg", size_index, &r5shm_map_size);
+	of_node_put(dev_node);
+#endif
+	// Map IPI registers and initialize IPI interrupts
+	bar_logi_r5ipi = ioremap_nocache(bar_phys_r5ipi, r5ipi_map_size);
 	/* disable IPI interrupt */
 	iowrite32(IPI_MASK, REG_BAR_ADDR(bar_logi_r5ipi, IPI_IDR_OFFSET));
 	/* clear old IPI interrupt */
@@ -817,15 +709,10 @@ static int drm_dev_probe(struct platform_device *pdev)
 	iowrite32(IPI_MASK, REG_BAR_ADDR(bar_logi_r5ipi, IPI_IER_OFFSET));
 	iowrite32(IPI_MASK, REG_BAR_ADDR(bar_logi_r5ipi, IPI_IER_OFFSET));
 	
-	bar_logi_r5shm = ioremap_nocache(bar_phys_r5shm, 0x1000000);
+	// Map SHM memory area to communicate with R5
+	bar_logi_r5shm = ioremap_nocache(bar_phys_r5shm, r5shm_map_size);
 
-	// set firmware private attribute to conv subdev
-	drm_firmware_attr.private = &drm_dev->subdev[0];
-
-	// Set conv to command list mode
 	if (subdev_phys_idx[0] >= 0) {
-		//iowrite32(1, REG_IO_ADDR((&drm_dev->subdev[0]), 0x40C));
-
 		// Get unified buffer size from register
 		ubuf_size = 1024;//ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x148));
 		if (ubuf_size > 0)
@@ -835,14 +722,6 @@ static int drm_dev_probe(struct platform_device *pdev)
 		conv_svn_version = 83;//ioread32(
 			//REG_IO_ADDR((&drm_dev->subdev[0]), 0x144));
 	}
-
-	// Set fc to command list mode
-	//if (subdev_phys_idx[1] >= 0)
-	//	iowrite32(1, REG_IO_ADDR((&drm_dev->subdev[1]), 0x28));
-
-	// Set firmware to use ROM
-	//if (subdev_phys_idx[0] >= 0)
-	//	iowrite32(1, REG_IO_ADDR((&drm_dev->subdev[0]), 0x44));
 
 	// Convert unified buffer size from kilobytes to bytes
 	if ((!UNIFIED_BUFFER_SIZE) || (UNIFIED_BUFFER_SIZE > 2097151)) {  // in KBytes
@@ -973,5 +852,5 @@ module_exit(drm_exit);
 
 MODULE_DESCRIPTION("DV core driver");
 MODULE_AUTHOR("Digital Media Professionals Inc.");
-MODULE_VERSION("7.0.20190215");
+MODULE_VERSION("7.0.20190301");
 MODULE_LICENSE("GPL");

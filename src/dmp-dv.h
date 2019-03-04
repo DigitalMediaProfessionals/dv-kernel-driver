@@ -20,8 +20,7 @@
 #define _DMP_DV_H
 
 #define DRM_DEV_NAME "dmp_dv"
-#define DRM_NUM_SUBDEV 4
-#define DRM_MAX_FIRMWARE_SIZE 0x2000
+#define DRM_NUM_SUBDEV 3
 #define DRM_WAIT_TIMEOUT (2 * HZ)
 #define DRM_MAX_WAIT_COUNT 10
 
@@ -41,7 +40,6 @@ struct dmp_cmb;
 
 extern uint32_t UNIFIED_BUFFER_SIZE;
 extern uint32_t MAX_CONV_KERNEL_SIZE;
-extern uint32_t MAX_FC_VECTOR_SIZE;
 
 extern void *bar_logi_r5ipi;
 extern void *bar_logi_r5shm;
@@ -51,9 +49,6 @@ void dv_cmb_finalize(struct device *dev, struct dmp_cmb *cmb);
 int dv_convert_conv_command(struct device *dev, struct dmp_cmb *cmb,
 			    struct dmp_dv_kcmd *cmd_info);
 void dv_run_conv_command(struct dmp_cmb *cmb, void *bar_logical);
-int dv_convert_fc_command(struct device *dev, struct dmp_cmb *cmb,
-			  struct dmp_dv_kcmd *cmd_info);
-void dv_run_fc_command(struct dmp_cmb *cmb, void *bar_logical);
 int dv_convert_ipu_command(struct device *dev, struct dmp_cmb *cmb,
 			   struct dmp_dv_kcmd *cmd_info);
 void dv_run_ipu_command(struct dmp_cmb *cmb, void *bar_logical);
