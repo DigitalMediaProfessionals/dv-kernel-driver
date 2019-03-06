@@ -346,13 +346,19 @@ static ssize_t conv_freq_store(struct device *dev,
 	if (ret < 0)
 		return ret;
 
-	if (freq <= 350) {
+	if (freq <= 350 && freq >= 30) {
 		fbdiv = (freq * 3 + 2) * (div2 ? 2 : 1) * divisor0 * divisor1;
 		fbdiv /= 100;
-		rpll_ctrl = (rpll_ctrl & ~(0x7fff)) | (fbdiv << 8) | 1;
+		rpll_ctrl = (rpll_ctrl & ~(0x7fff)) | (fbdiv << 8) | 8;
 		iowrite32(rpll_ctrl, REG_BAR_ADDR(bar_logi_crl_apb, 0x30));
-		msleep(100);
+		msleep(50);
+		rpll_ctrl = (rpll_ctrl | 1);
+		iowrite32(rpll_ctrl, REG_BAR_ADDR(bar_logi_crl_apb, 0x30));
+		msleep(50);
 		rpll_ctrl = (rpll_ctrl & ~1);
+		iowrite32(rpll_ctrl, REG_BAR_ADDR(bar_logi_crl_apb, 0x30));
+		msleep(50);
+		rpll_ctrl = (rpll_ctrl & ~8);
 		iowrite32(rpll_ctrl, REG_BAR_ADDR(bar_logi_crl_apb, 0x30));
 	}
 
