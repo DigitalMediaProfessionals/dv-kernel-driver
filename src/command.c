@@ -605,6 +605,7 @@ void dv_run_conv_command(struct dmp_cmb *cmb, void *bar_logical)
 	iowrite32(prev_size / 8, REG_IO_ADDR(bar_logi_r5shm, 0x4));
 	iowrite32(0x1, REG_IO_ADDR(bar_logi_r5shm, 0x8));
 	iowrite32(IPI_MASK, REG_IO_ADDR(bar_logi_r5ipi, IPI_TRIG_OFFSET));
+	++conv_kick_count;
 }
 
 static uint32_t dv_ipu_v0_get_cmb_size(const struct dmp_dv_kcmdraw_ipu_v0 *cmd)

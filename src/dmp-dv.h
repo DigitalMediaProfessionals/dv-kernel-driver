@@ -40,6 +40,7 @@ struct dmp_cmb;
 
 extern uint32_t UNIFIED_BUFFER_SIZE;
 extern uint32_t MAX_CONV_KERNEL_SIZE;
+extern uint32_t conv_kick_count;
 
 extern void *bar_logi_r5ipi;
 extern void *bar_logi_r5shm;

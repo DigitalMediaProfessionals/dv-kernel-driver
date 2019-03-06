@@ -39,6 +39,7 @@
 #include <linux/sysfs.h>
 #include <linux/mutex.h>
 #include <linux/workqueue.h>
+#include <linux/delay.h>
 #ifdef USE_DEVTREE
 #include <linux/of.h>
 #include <linux/of_irq.h>
@@ -63,6 +64,8 @@ static uint32_t bar_phys_r5shm = 0;
 static uint32_t r5ipi_map_size = 0;
 static uint32_t r5shm_map_size = 0;
 #endif
+static const uint32_t bar_phys_crl_apb = 0xff5e0000;
+
 static unsigned int reg_offset[DRM_NUM_SUBDEV] = {
 	UINT_MAX,
 	UINT_MAX,
@@ -79,10 +82,12 @@ static const char *subdev_name[DRM_NUM_SUBDEV] = {
 #define DEF_UNIFIED_BUFFER_SIZE_KB 1024
 uint32_t UNIFIED_BUFFER_SIZE = DEF_UNIFIED_BUFFER_SIZE_KB << 10;
 uint32_t MAX_CONV_KERNEL_SIZE = 7;
+uint32_t conv_kick_count = 0;
 static uint32_t conv_svn_version = 0;
 
 void *bar_logi_r5ipi = 0;
 void *bar_logi_r5shm = 0;
+void *bar_logi_crl_apb = 0;
 
 struct dv_cmd_work_item {
 	struct dmp_dev_private *dev_pri;
@@ -314,18 +319,51 @@ static ssize_t conv_freq_show(struct device *dev,
                               struct device_attribute *attr,
                               char *buf)
 {
-        struct drm_dev *drm_dev = dev_get_drvdata(dev);
-        int freq = 250;//ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x424));
-        freq &= 0xFF;
-        return scnprintf(buf, PAGE_SIZE, "%d\n", freq);
+	uint32_t rpll_ctrl = ioread32(REG_BAR_ADDR(bar_logi_crl_apb, 0x30));
+	uint32_t pl0_ref_ctrl = ioread32(REG_BAR_ADDR(bar_logi_crl_apb, 0xc0));
+	uint32_t fbdiv = (rpll_ctrl >> 8) & 0x7f;
+	uint32_t div2 = (rpll_ctrl >> 16) & 1;
+	uint32_t divisor0 = (pl0_ref_ctrl >> 8) & 0x3f;
+	uint32_t divisor1 = (pl0_ref_ctrl >> 16) & 0x3f;
+	uint32_t freq = fbdiv * 100 / (div2 ? 2 : 1) / divisor0 / divisor1 / 3;
+	return scnprintf(buf, PAGE_SIZE, "%d\n", freq);
+}
+
+static ssize_t conv_freq_store(struct device *dev,
+                               struct device_attribute *attr,
+			       const char *buf, size_t len)
+{
+	uint32_t rpll_ctrl = ioread32(REG_BAR_ADDR(bar_logi_crl_apb, 0x30));
+	uint32_t pl0_ref_ctrl = ioread32(REG_BAR_ADDR(bar_logi_crl_apb, 0xc0));
+	uint32_t div2 = (rpll_ctrl >> 16) & 1;
+	uint32_t divisor0 = (pl0_ref_ctrl >> 8) & 0x3f;
+	uint32_t divisor1 = (pl0_ref_ctrl >> 16) & 0x3f;
+	uint32_t fbdiv;
+	uint32_t freq;
+	int ret;
+
+	ret = kstrtouint(buf, 0, &freq);
+	if (ret < 0)
+		return ret;
+
+	if (freq <= 350) {
+		fbdiv = (freq * 3 + 2) * (div2 ? 2 : 1) * divisor0 * divisor1;
+		fbdiv /= 100;
+		rpll_ctrl = (rpll_ctrl & ~(0x7fff)) | (fbdiv << 8) | 1;
+		iowrite32(rpll_ctrl, REG_BAR_ADDR(bar_logi_crl_apb, 0x30));
+		msleep(100);
+		rpll_ctrl = (rpll_ctrl & ~1);
+		iowrite32(rpll_ctrl, REG_BAR_ADDR(bar_logi_crl_apb, 0x30));
+	}
+
+	return len;
 }
 
 static ssize_t conv_kick_count_show(struct device *dev,
 				    struct device_attribute *attr,
 				    char *buf)
 {
-	struct drm_dev *drm_dev = dev_get_drvdata(dev);
-	int kick_count = 0;//ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x100));
+	int kick_count = conv_kick_count;
 	return scnprintf(buf, PAGE_SIZE, "%d\n", kick_count);
 }
 
@@ -348,7 +386,7 @@ static ssize_t hw_version_show(struct device *dev,
 			       char *buf)
 {
 	struct drm_dev *drm_dev = dev_get_drvdata(dev);
-	int version = 0x7000;//ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x140));
+	int version = ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x128));
 	return scnprintf(buf, PAGE_SIZE, "%04x\n", version & 0xffff);
 }
 
@@ -364,7 +402,7 @@ static ssize_t mac_num_show(struct device *dev,
 			    char *buf)
 {
 	struct drm_dev *drm_dev = dev_get_drvdata(dev);
-	int param = 576;//ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x14C));
+	int param = ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x120)) * 72;
 	return scnprintf(buf, PAGE_SIZE, "%d\n", param);
 }
 
@@ -373,10 +411,11 @@ static ssize_t max_input_size_show(struct device *dev,
 				   char *buf)
 {
 	struct drm_dev *drm_dev = dev_get_drvdata(dev);
-	int param = 1024;//ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x150));
+	int param = ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x124));
 	return scnprintf(buf, PAGE_SIZE, "%d\n", param);
 }
 
+#if 0
 static ssize_t input_bytes_show(struct device *dev,
 				struct device_attribute *attr,
 				char *buf)
@@ -403,8 +442,9 @@ static ssize_t weights_bytes_show(struct device *dev,
 	unsigned long long param = 0;//ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x188));
 	return scnprintf(buf, PAGE_SIZE, "%llu\n", param << 4);
 }
+#endif
 
-static DEVICE_ATTR_RO(conv_freq);
+static DEVICE_ATTR_RW(conv_freq);
 static DEVICE_ATTR_RO(conv_kick_count);
 static DEVICE_ATTR_RO(ub_size);
 static DEVICE_ATTR_RO(max_kernel_size);
@@ -414,9 +454,11 @@ static DEVICE_ATTR_RO(svn_version);
 static DEVICE_ATTR_RO(mac_num);
 static DEVICE_ATTR_RO(max_input_size);
 
+#if 0
 static DEVICE_ATTR_RO(input_bytes);
 static DEVICE_ATTR_RO(output_bytes);
 static DEVICE_ATTR_RO(weights_bytes);
+#endif
 
 static struct attribute *drm_conv_attrs[] = {
 	&dev_attr_conv_freq.attr,
@@ -427,9 +469,11 @@ static struct attribute *drm_conv_attrs[] = {
 	&dev_attr_svn_version.attr,
 	&dev_attr_mac_num.attr,
 	&dev_attr_max_input_size.attr,
+#if 0
 	&dev_attr_input_bytes.attr,
 	&dev_attr_output_bytes.attr,
 	&dev_attr_weights_bytes.attr,
+#endif
 	NULL
 };
 
@@ -711,10 +755,13 @@ static int drm_dev_probe(struct platform_device *pdev)
 	
 	// Map SHM memory area to communicate with R5
 	bar_logi_r5shm = ioremap_nocache(bar_phys_r5shm, r5shm_map_size);
+	
+	// Map CRL_APB registers
+	bar_logi_crl_apb = ioremap_nocache(bar_phys_crl_apb, 0x1000);
 
 	if (subdev_phys_idx[0] >= 0) {
 		// Get unified buffer size from register
-		ubuf_size = 1024;//ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x148));
+		ubuf_size = ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x11c));
 		if (ubuf_size > 0)
 			UNIFIED_BUFFER_SIZE = ubuf_size;
 
@@ -722,13 +769,6 @@ static int drm_dev_probe(struct platform_device *pdev)
 		conv_svn_version = 83;//ioread32(
 			//REG_IO_ADDR((&drm_dev->subdev[0]), 0x144));
 	}
-
-	// Convert unified buffer size from kilobytes to bytes
-	if ((!UNIFIED_BUFFER_SIZE) || (UNIFIED_BUFFER_SIZE > 2097151)) {  // in KBytes
-		pr_warning(DRM_DEV_NAME ": Detected suspicious ubuf-size value %u KB in the device tree, using default %u KB instead",
-			   UNIFIED_BUFFER_SIZE, DEF_UNIFIED_BUFFER_SIZE_KB);
-	}
-	UNIFIED_BUFFER_SIZE <<= 10;
 
 	err = drm_register_chrdev(drm_dev);
 	if (err) {
@@ -777,6 +817,7 @@ static int drm_dev_remove(struct platform_device *pdev)
 	}
 	iounmap(bar_logi_r5ipi);
 	iounmap(bar_logi_r5shm);
+	iounmap(bar_logi_crl_apb);
 
 	dev_dbg(&pdev->dev, "remove successful\n");
 	return 0;
