@@ -352,7 +352,7 @@ static inline int get_conv_out_width(
 	if (is_deconv) {
 		return stride * (width - 1) + kx - pad_left - pad_right;
 	} else {
-		return pad_left +  width + pad_right - kx + 1;
+		return (pad_left +  width + pad_right - kx) / stride + 1;
 	}
 }
 
