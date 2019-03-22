@@ -11,4 +11,4 @@ CROSS_COMPILE=<path to cross tool>/arm-linux-gnueabihf- KERNELDIR=<path to kerne
 ```
 
 ## HOWTO Install
-Run `sudo make install`.
+Run `sudo make install` on your AI FPGA Module.
