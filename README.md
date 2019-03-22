@@ -9,3 +9,6 @@ It is also OK to pass them from the command line directly. Like this:
 ```
 CROSS_COMPILE=<path to cross tool>/arm-linux-gnueabihf- KERNELDIR=<path to kernel> make
 ```
+
+## HOWTO Install
+Run `sudo make install`.
