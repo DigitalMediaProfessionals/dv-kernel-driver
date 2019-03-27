@@ -336,8 +336,8 @@ static ssize_t conv_freq_store(struct device *dev,
 	uint32_t rpll_ctrl = ioread32(REG_BAR_ADDR(bar_logi_crl_apb, 0x30));
 	uint32_t pl0_ref_ctrl = ioread32(REG_BAR_ADDR(bar_logi_crl_apb, 0xc0));
 	uint32_t div2 = (rpll_ctrl >> 16) & 1;
-	uint32_t divisor0 = (pl0_ref_ctrl >> 8) & 0x3f;
-	uint32_t divisor1 = (pl0_ref_ctrl >> 16) & 0x3f;
+	uint32_t divisor0 = 1;
+	uint32_t divisor1 = 1;
 	uint32_t fbdiv;
 	uint32_t freq;
 	int ret;
@@ -347,18 +347,32 @@ static ssize_t conv_freq_store(struct device *dev,
 		return ret;
 
 	if (freq <= 350 && freq >= 30) {
+		if (freq <= 50)
+			divisor0 = 30;
+		else if (freq <= 75)
+			divisor0 = 20;
+		else if (freq <= 125)
+			divisor0 = 12;
+		else if (freq <= 185)
+			divisor0 = 8;
+		else if (freq <= 250)
+			divisor0 = 6;
+		else if (freq <= 375)
+			divisor0 = 4;
+		else if (freq <= 500)
+			divisor0 = 3;
 		fbdiv = (freq * 3 + 2) * (div2 ? 2 : 1) * divisor0 * divisor1;
 		fbdiv /= 100;
 		rpll_ctrl = (rpll_ctrl & ~(0x7fff)) | (fbdiv << 8) | 8;
+		pl0_ref_ctrl = 0x01000002 | (divisor0 << 8) | (divisor1 << 16);
+
 		iowrite32(rpll_ctrl, REG_BAR_ADDR(bar_logi_crl_apb, 0x30));
 		msleep(50);
 		rpll_ctrl = (rpll_ctrl | 1);
 		iowrite32(rpll_ctrl, REG_BAR_ADDR(bar_logi_crl_apb, 0x30));
+		iowrite32(pl0_ref_ctrl, REG_BAR_ADDR(bar_logi_crl_apb, 0xc0));
 		msleep(50);
-		rpll_ctrl = (rpll_ctrl & ~1);
-		iowrite32(rpll_ctrl, REG_BAR_ADDR(bar_logi_crl_apb, 0x30));
-		msleep(50);
-		rpll_ctrl = (rpll_ctrl & ~8);
+		rpll_ctrl = (rpll_ctrl & ~9);
 		iowrite32(rpll_ctrl, REG_BAR_ADDR(bar_logi_crl_apb, 0x30));
 	}
 
