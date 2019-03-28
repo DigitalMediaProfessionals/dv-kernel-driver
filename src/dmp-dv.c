@@ -786,7 +786,7 @@ static int drm_dev_probe(struct platform_device *pdev)
 			UNIFIED_BUFFER_SIZE = ubuf_size;
 
 		// Get SVN version
-		conv_svn_version = 83;//ioread32(
+		conv_svn_version = 93;//ioread32(
 			//REG_IO_ADDR((&drm_dev->subdev[0]), 0x144));
 	}
 
@@ -913,5 +913,5 @@ module_exit(drm_exit);
 
 MODULE_DESCRIPTION("DV core driver");
 MODULE_AUTHOR("Digital Media Professionals Inc.");
-MODULE_VERSION("7.0.20190301");
+MODULE_VERSION("7.0.20190328");
 MODULE_LICENSE("GPL");
