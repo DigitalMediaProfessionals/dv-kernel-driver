@@ -41,6 +41,12 @@ struct dmp_dv_kcmd {
 	__u64 cmd_pointer;  // pointer to the commands data
 };
 
+/// @brief Wait command structure
+struct dmp_dv_kwait {
+  __u64 cmd_id;         // pass in to specify which command to wait
+  __u64 cmd_exec_time;  // execution time in microseconds, returned from kernel
+};
+
 #define DMP_DV_IOC_MAGIC 0x82
 
 /**
@@ -68,6 +74,6 @@ struct dmp_dv_kcmd {
  * Wait for the specified run ID to be finished.
  * Immediately return if the specified ID is already finished.
  */
-#define DMP_DV_IOC_WAIT _IOW(DMP_DV_IOC_MAGIC, 3, __u64)
+#define DMP_DV_IOC_WAIT _IOW(DMP_DV_IOC_MAGIC, 3, struct dmp_dv_kwait)
 
 #endif  // _UAPI_LINUX_DMP_DV_H
