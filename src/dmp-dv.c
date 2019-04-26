@@ -89,9 +89,14 @@ void *bar_logi_r5ipi = 0;
 void *bar_logi_r5shm = 0;
 void *bar_logi_crl_apb = 0;
 
+atomic_t input_count = ATOMIC_INIT(0);
+atomic_t output_count = ATOMIC_INIT(0);
+atomic_t weights_count = ATOMIC_INIT(0);
+
 struct dv_cmd_work_item {
 	struct dmp_dev_private *dev_pri;
 	void (*run_func)(struct dmp_cmb *, void *);
+	void (*post_func)(struct dmp_cmb *, void *);
 	uint64_t cmd_id;
 	struct work_struct work;
 };
@@ -196,6 +201,8 @@ static void cmd_work(struct work_struct *work)
 	while (count < DRM_MAX_WAIT_COUNT &&
 	       wait_cmd_id(dev_pri->dev, wo->cmd_id) != 0)
 		++count;
+	if (wo->post_func)
+		wo->post_func(dev_pri->cmb, dev_pri->dev->bar_logical);
 	kfree(wo);
 }
 
@@ -245,6 +252,38 @@ static int drm_release(struct inode *inode, struct file *file)
 	return 0;
 }
 
+static void dv_post_conv_command(struct dmp_cmb *cmb, void *bar_logical)
+{
+	// Update I/O bandwith measurement counters
+	uint32_t counters[16];
+	uint32_t input_inc = 0, output_inc = 0, weights_inc = 0;
+	int i, offset;
+
+	for (i = 0; i < 8; ++i) {
+		offset = 0x200 + i * 4;
+		counters[i] = ioread32(REG_BAR_ADDR(bar_logical, offset));
+	}
+	for (i = 8; i < 16; ++i) {
+		offset = 0x240 + i * 4;
+		counters[i] = ioread32(REG_BAR_ADDR(bar_logical, offset));
+	}
+
+	for (i = 0; i < 16; ++i) {
+		// data write valid & ready
+		if ((i & 3) == 3)
+			output_inc += counters[i];
+		// weight read
+		if (i & 4)
+			weights_inc += counters[i];
+		// input read
+		if (i & 8)
+			input_inc += counters[i];
+	}
+	atomic_add(input_inc, &input_count);
+	atomic_add(output_inc, &output_count);
+	atomic_add(weights_inc, &weights_count);
+}
+
 static int (*cmd_func[DRM_NUM_SUBDEV])(struct device *, struct dmp_cmb *,
 				       struct dmp_dv_kcmd *) = {
 	dv_convert_conv_command,
@@ -256,6 +295,12 @@ static void (*run_func[DRM_NUM_SUBDEV])(struct dmp_cmb *, void *) = {
 	dv_run_conv_command,
 	dv_run_ipu_command,
 	dv_run_maximizer_command,
+};
+
+static void (*post_func[DRM_NUM_SUBDEV])(struct dmp_cmb *, void *) = {
+	dv_post_conv_command,
+	NULL,
+	NULL,
 };
 
 static long drm_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
@@ -285,6 +330,7 @@ static long drm_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			return -ENOMEM;
 		wo->dev_pri = dev_pri;
 		wo->run_func = run_func[minor];
+		wo->post_func = post_func[minor];
 		INIT_WORK(&wo->work, cmd_work);
 		spin_lock(&dev_pri->dev->wq_exclusive);
 		cmd_id = ++dev_pri->dev->cmd_id;
@@ -435,13 +481,11 @@ static ssize_t max_input_size_show(struct device *dev,
 	return scnprintf(buf, PAGE_SIZE, "%d\n", param);
 }
 
-#if 0
 static ssize_t input_bytes_show(struct device *dev,
 				struct device_attribute *attr,
 				char *buf)
 {
-	struct drm_dev *drm_dev = dev_get_drvdata(dev);
-	unsigned long long param = 0;//ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x180));
+	unsigned long long param = atomic_xchg(&input_count, 0);
 	return scnprintf(buf, PAGE_SIZE, "%llu\n", param << 4);
 }
 
@@ -449,8 +493,7 @@ static ssize_t output_bytes_show(struct device *dev,
 				 struct device_attribute *attr,
 				 char *buf)
 {
-	struct drm_dev *drm_dev = dev_get_drvdata(dev);
-	unsigned long long param = 0;//ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x184));
+	unsigned long long param = atomic_xchg(&output_count, 0);
 	return scnprintf(buf, PAGE_SIZE, "%llu\n", param << 4);
 }
 
@@ -458,11 +501,9 @@ static ssize_t weights_bytes_show(struct device *dev,
 				  struct device_attribute *attr,
 				  char *buf)
 {
-	struct drm_dev *drm_dev = dev_get_drvdata(dev);
-	unsigned long long param = 0;//ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x188));
+	unsigned long long param = atomic_xchg(&weights_count, 0);
 	return scnprintf(buf, PAGE_SIZE, "%llu\n", param << 4);
 }
-#endif
 
 static DEVICE_ATTR_RW(conv_freq);
 static DEVICE_ATTR_RO(conv_kick_count);
@@ -474,11 +515,9 @@ static DEVICE_ATTR_RO(svn_version);
 static DEVICE_ATTR_RO(mac_num);
 static DEVICE_ATTR_RO(max_input_size);
 
-#if 0
 static DEVICE_ATTR_RO(input_bytes);
 static DEVICE_ATTR_RO(output_bytes);
 static DEVICE_ATTR_RO(weights_bytes);
-#endif
 
 static struct attribute *drm_conv_attrs[] = {
 	&dev_attr_conv_freq.attr,
@@ -489,11 +528,9 @@ static struct attribute *drm_conv_attrs[] = {
 	&dev_attr_svn_version.attr,
 	&dev_attr_mac_num.attr,
 	&dev_attr_max_input_size.attr,
-#if 0
 	&dev_attr_input_bytes.attr,
 	&dev_attr_output_bytes.attr,
 	&dev_attr_weights_bytes.attr,
-#endif
 	NULL
 };
 
@@ -742,7 +779,7 @@ static int drm_dev_probe(struct platform_device *pdev)
 			drm_dev->subdev[i].hw_id = 0;
 		}
 	}
-	
+
 #ifdef USE_DEVTREE
 	// Get IPI and SHM base address
 	dev_node = of_find_node_by_name(NULL, "ipi");
@@ -772,10 +809,10 @@ static int drm_dev_probe(struct platform_device *pdev)
 	/* Enable IPI interrupt */
 	iowrite32(IPI_MASK, REG_BAR_ADDR(bar_logi_r5ipi, IPI_IER_OFFSET));
 	iowrite32(IPI_MASK, REG_BAR_ADDR(bar_logi_r5ipi, IPI_IER_OFFSET));
-	
+
 	// Map SHM memory area to communicate with R5
 	bar_logi_r5shm = ioremap_nocache(bar_phys_r5shm, r5shm_map_size);
-	
+
 	// Map CRL_APB registers
 	bar_logi_crl_apb = ioremap_nocache(bar_phys_crl_apb, 0x1000);
 
@@ -788,6 +825,9 @@ static int drm_dev_probe(struct platform_device *pdev)
 		// Get SVN version
 		conv_svn_version = 93;//ioread32(
 			//REG_IO_ADDR((&drm_dev->subdev[0]), 0x144));
+
+		// Configure performance counter to watch I/O events
+		iowrite32(0x177654, REG_IO_ADDR((&drm_dev->subdev[0]), 0x144));
 	}
 
 	err = drm_register_chrdev(drm_dev);
