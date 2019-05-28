@@ -25,14 +25,24 @@
 
 /// @brief Raw command for convolutional block version 1.
 struct dmp_dv_kcmdraw_conv_v1 {
-	struct dmp_dv_kcmdraw header;  // General structure information 
+	struct dmp_dv_kcmdraw header;  // General structure information
 
-	struct dmp_dv_kcmdraw_conv_v0 conv_cmd;
+	struct dmp_dv_kbuf u8tofp16_table; // If this table exist (fd >= 0), input buffer is in u8 format
+                                     // and should be converted to fp16 with this table
+  // The following is the same as v0, so should be able to reuse implementation in kernel
+	struct dmp_dv_kbuf input_buf;      // Input buffer
+	struct dmp_dv_kbuf output_buf;     // Output buffer
+	struct dmp_dv_kbuf eltwise_buf;    // Buffer for elementwise add (0 = UBUF Input Buffer)
 
-	struct dmp_dv_kbuf u8tofp16_table;
-	__u8 is_u8_input;
+	__u32 topo;                   // [31:0] Output Destination of each run, 0 = UBUF, 1 = EXTMEM
+	__u16 w;                      // Input Width
+	__u16 h;                      // Input Height
+	__u16 z;                      // Input Depth
+	__u16 c;                      // Input Channels
+	__u16 input_circular_offset;  // Input Depth circular offset
+	__u16 output_mode;            // 0 = concat, 1 = elementwise add
 
-	__u8 rsvd[7];
+	struct dmp_dv_kcmdraw_conv_v0_run run[32];  // Description of each run
 };
 
 

@@ -23,6 +23,7 @@
 
 #include "dmp-dv.h"
 #include "../uapi/dmp_dv_cmdraw_v0.h"
+#include "../uapi/dmp_dv_cmdraw_v1.h"
 #include "../uapi/dimensions.h"
 
 #define MAX_NUM_RUNS 32
@@ -540,6 +541,60 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 	return 0;
 }
 
+static int dv_convert_conv_v1(struct device *dev, struct dmp_cmb *cmb,
+			      struct dmp_dv_kcmdraw __user *user_cmd,
+			      size_t size)
+{
+	struct dmp_cmb_list_entry *cmb_node;
+	struct dmp_dv_kcmdraw_conv_v1 *cmd;
+	struct dmp_dv_kbuf table;
+	size_t cmd_size;
+	uint32_t *cmd_buf;
+	uint32_t table_base_addr, table_buf_size;
+	int ret;
+
+	cmd = (struct dmp_dv_kcmdraw_conv_v1 *)user_cmd;
+	if (copy_from_user(&table, &cmd->u8tofp16_table, sizeof(table))) {
+		pr_warn(DRM_DEV_NAME ": copy_from_user() failed for %zu bytes\n",
+			sizeof(table));
+		return -EFAULT;
+	}
+
+	ret = get_dma_addr(dev, cmb, &table, &table_base_addr, &table_buf_size);
+	if (ret) {
+		pr_warn(DRM_DEV_NAME ": get_dma_addr() failed for table\n");
+		return ret;
+	}
+	if (table_buf_size < 6 * 256) {
+		pr_warn(DRM_DEV_NAME ": got table buffer size %u while %u was expected\n",
+			table_buf_size, 6 * 256);
+		return -EINVAL;
+	}
+
+	cmb_node = list_first_entry(&cmb->cmb_list, struct dmp_cmb_list_entry,
+				    list_node);
+	cmd_size = sizeof(uint32_t) * 2;
+	// include size of jump or interrupt commands
+	if (cmb_node->size + cmd_size + 8 > cmb_node->capacity) {
+		cmb_node = dv_cmb_allocate(dev);
+		if (!cmb_node) {
+			pr_warn(DRM_DEV_NAME ": dv_cmb_allocate() failed\n");
+			return -ENOMEM;
+		}
+		list_add(&cmb_node->list_node, &cmb->cmb_list);
+	}
+	cmd_buf = (uint32_t *)((uint8_t *)cmb_node->logical + cmb_node->size);
+
+	cmd_buf[0] = 0x2000f004; // Write one word to 0x2000 as table address
+	cmd_buf[1] = table_base_addr;
+	cmb_node->size += cmd_size;
+
+	// call v0 version to handle remaining commands
+	user_cmd = (struct dmp_dv_kcmdraw __user *)((uint8_t *)cmd + sizeof(table));
+	size -= sizeof(table);
+	return dv_convert_conv_v0(dev, cmb, user_cmd, size);
+}
+
 int dv_convert_conv_command(struct device *dev, struct dmp_cmb *cmb,
 			    struct dmp_dv_kcmd *cmd_info)
 {
@@ -559,6 +614,11 @@ int dv_convert_conv_command(struct device *dev, struct dmp_cmb *cmb,
 		switch (cmd.version) {
 		case 0:
 			ret = dv_convert_conv_v0(dev, cmb, user_cmds, cmd.size);
+			if (ret)
+				return ret;
+			break;
+		case 1:
+			ret = dv_convert_conv_v1(dev, cmb, user_cmds, cmd.size);
 			if (ret)
 				return ret;
 			break;
