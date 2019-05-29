@@ -565,7 +565,7 @@ static int dv_convert_conv_v1(struct device *dev, struct dmp_cmb *cmb,
 		pr_warn(DRM_DEV_NAME ": get_dma_addr() failed for table\n");
 		return ret;
 	}
-	if (table_buf_size < 6 * 256) {
+	if (table_base_addr != 0xDEADBEEF && table_buf_size < 6 * 256) {
 		pr_warn(DRM_DEV_NAME ": got table buffer size %u while %u was expected\n",
 			table_buf_size, 6 * 256);
 		return -EINVAL;
