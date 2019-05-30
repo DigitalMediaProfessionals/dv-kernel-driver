@@ -551,12 +551,18 @@ static int dv_convert_conv_v1(struct device *dev, struct dmp_cmb *cmb,
 	size_t cmd_size;
 	uint32_t *cmd_buf;
 	uint32_t table_base_addr, table_buf_size;
+	uint16_t is_bgr;
 	int ret;
 
 	cmd = (struct dmp_dv_kcmdraw_conv_v1 *)user_cmd;
 	if (copy_from_user(&table, &cmd->u8tofp16_table, sizeof(table))) {
 		pr_warn(DRM_DEV_NAME ": copy_from_user() failed for %zu bytes\n",
 			sizeof(table));
+		return -EFAULT;
+	}
+	if (copy_from_user(&is_bgr, &cmd->is_bgr, sizeof(is_bgr))) {
+		pr_warn(DRM_DEV_NAME ": copy_from_user() failed for %zu bytes\n",
+			sizeof(is_bgr));
 		return -EFAULT;
 	}
 
@@ -569,6 +575,9 @@ static int dv_convert_conv_v1(struct device *dev, struct dmp_cmb *cmb,
 		pr_warn(DRM_DEV_NAME ": got table buffer size %u while %u was expected\n",
 			table_buf_size, 6 * 256);
 		return -EINVAL;
+	}
+	if (is_bgr) {
+		table_base_addr |= 1;
 	}
 
 	cmb_node = list_first_entry(&cmb->cmb_list, struct dmp_cmb_list_entry,
@@ -590,8 +599,8 @@ static int dv_convert_conv_v1(struct device *dev, struct dmp_cmb *cmb,
 	cmb_node->size += cmd_size;
 
 	// call v0 version to handle remaining commands
-	user_cmd = (struct dmp_dv_kcmdraw __user *)((uint8_t *)cmd + sizeof(table));
-	size -= sizeof(table);
+	user_cmd = (struct dmp_dv_kcmdraw __user *)((uint8_t *)cmd + sizeof(table) + 8);
+	size -= sizeof(table) + 8;
 	return dv_convert_conv_v0(dev, cmb, user_cmd, size);
 }
 
