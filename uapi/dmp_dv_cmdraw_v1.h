@@ -29,7 +29,7 @@ struct dmp_dv_kcmdraw_conv_v1 {
 
 	struct dmp_dv_kbuf u8tofp16_table; // If this table exist (fd >= 0), input buffer is in u8 format
 	                                   // and should be converted to fp16 with this table
-	__u16 is_bgr;                      // Should output BGR format
+	__u16 to_bgr;                      // Should output BGR format
 	__u16 rsvd[3];
 
 	// The following is the same as v0, so should be able to reuse implementation in kernel

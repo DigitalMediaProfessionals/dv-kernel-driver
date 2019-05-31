@@ -551,7 +551,7 @@ static int dv_convert_conv_v1(struct device *dev, struct dmp_cmb *cmb,
 	size_t cmd_size;
 	uint32_t *cmd_buf;
 	uint32_t table_base_addr, table_buf_size;
-	uint16_t is_bgr;
+	uint16_t to_bgr;
 	int ret;
 
 	cmd = (struct dmp_dv_kcmdraw_conv_v1 *)user_cmd;
@@ -560,9 +560,9 @@ static int dv_convert_conv_v1(struct device *dev, struct dmp_cmb *cmb,
 			sizeof(table));
 		return -EFAULT;
 	}
-	if (copy_from_user(&is_bgr, &cmd->is_bgr, sizeof(is_bgr))) {
+	if (copy_from_user(&to_bgr, &cmd->to_bgr, sizeof(to_bgr))) {
 		pr_warn(DRM_DEV_NAME ": copy_from_user() failed for %zu bytes\n",
-			sizeof(is_bgr));
+			sizeof(to_bgr));
 		return -EFAULT;
 	}
 
@@ -576,7 +576,7 @@ static int dv_convert_conv_v1(struct device *dev, struct dmp_cmb *cmb,
 			table_buf_size, 6 * 256);
 		return -EINVAL;
 	}
-	if (is_bgr) {
+	if (to_bgr) {
 		table_base_addr |= 1;
 	}
 
