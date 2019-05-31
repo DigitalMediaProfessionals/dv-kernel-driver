@@ -40,6 +40,7 @@
 #include <linux/mutex.h>
 #include <linux/workqueue.h>
 #include <linux/delay.h>
+#include <linux/timekeeping.h>
 #ifdef USE_DEVTREE
 #include <linux/of.h>
 #include <linux/of_irq.h>
@@ -110,6 +111,7 @@ struct dmp_dev {
 	uint64_t cmd_id;
 	uint64_t hw_id;
 	struct workqueue_struct *wq;
+	ktime_t cmd_start_time[16];
 };
 
 struct dmp_dev_private {
@@ -192,6 +194,9 @@ static void cmd_work(struct work_struct *work)
 	struct dv_cmd_work_item	*wo = container_of(work,
 		struct dv_cmd_work_item, work);
 	struct dmp_dev_private *dev_pri = wo->dev_pri;
+	// Record cmd start time
+	dev_pri->dev->cmd_start_time[wo->cmd_id & 0xf] = ktime_get();
+
 	wo->run_func(dev_pri->cmb, dev_pri->dev->bar_logical);
 	while (count < DRM_MAX_WAIT_COUNT &&
 	       wait_cmd_id(dev_pri->dev, wo->cmd_id) != 0)
@@ -267,6 +272,7 @@ static long drm_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	struct dmp_dev_private *dev_pri = file->private_data;
 	struct dv_cmd_work_item *wo;
 	struct dmp_dv_kcmd cmd_info;
+	struct dmp_dv_kwait wait_info;
 	uint64_t cmd_id;
 	unsigned int minor = iminor(inode);
 
@@ -297,9 +303,19 @@ static long drm_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		spin_unlock(&dev_pri->dev->wq_exclusive);
 		break;
 	case DMP_DV_IOC_WAIT:
-		if (copy_from_user(&cmd_id, (void __user *)arg, _IOC_SIZE(cmd)))
+		if (_IOC_SIZE(cmd) > sizeof(wait_info))
+			return -EINVAL;
+		if (copy_from_user(&wait_info, (void __user *)arg,
+				   _IOC_SIZE(cmd)))
 			return -EFAULT;
+		cmd_id = wait_info.cmd_id;
 		ret = wait_cmd_id(dev_pri->dev, cmd_id);
+		wait_info.cmd_exec_time = ktime_us_delta(ktime_get(),
+			dev_pri->dev->cmd_start_time[cmd_id & 0xf]);
+		if (copy_to_user((void __user *)arg, &wait_info,
+		                 _IOC_SIZE(cmd))) {
+			return -EFAULT;
+		}
 		break;
 	default:
 		break;
