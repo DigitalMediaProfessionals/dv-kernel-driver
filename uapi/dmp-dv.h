@@ -44,7 +44,7 @@ struct dmp_dv_kcmd {
 /// @brief Wait command structure
 struct dmp_dv_kwait {
   __u64 cmd_id;         // pass in to specify which command to wait
-  __u64 cmd_exec_time;  // execution time in microseconds, returned from kernel
+  __s64 cmd_exec_time;  // execution time in microseconds, returned from kernel
 };
 
 #define DMP_DV_IOC_MAGIC 0x82
