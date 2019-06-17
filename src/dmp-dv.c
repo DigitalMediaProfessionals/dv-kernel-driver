@@ -52,6 +52,10 @@
 #define REG_IO_ADDR(DV, OF) ((void __iomem *)(DV->bar_logical) + OF)
 #define REG_BAR_ADDR(BAR, OF) ((void __iomem *)(BAR) + OF)
 
+#define U64_OVERFLOW_INTERVAL	(UINT64_MAX >> 46)
+#define U64_LARGER_OR_EQUAL_OVERFLOW(x, ref)	\
+	(((x) >= (ref)) || ((x) >= ((uint64_t)(ref) + U64_OVERFLOW_INTERVAL)))
+
 #ifndef USE_DEVTREE
 static int irq_no[DRM_NUM_SUBDEV] = {48};
 static unsigned int reg_base = 0x80000000;
@@ -177,11 +181,12 @@ static int wait_cmd_id(struct dmp_dev *dev, uint64_t cmd_id)
 	hw_id = dev->hw_id;
 	spin_unlock_irqrestore(&dev->int_exclusive, irq_save);
 
-	if (hw_id >= cmd_id)
+	if (U64_LARGER_OR_EQUAL_OVERFLOW(hw_id, cmd_id))
 		return 0;
 
 	ret = wait_event_interruptible_timeout(dev->wait_queue,
-		(dev->hw_id >= cmd_id), DRM_WAIT_TIMEOUT);
+		U64_LARGER_OR_EQUAL_OVERFLOW(dev->hw_id, cmd_id),
+		DRM_WAIT_TIMEOUT);
 
 	if (ret > 0)
 		return 0;
@@ -190,7 +195,6 @@ static int wait_cmd_id(struct dmp_dev *dev, uint64_t cmd_id)
 			(long long)cmd_id);
 		return -EBUSY;
 	}
-	return ret;
 }
 
 static void cmd_work(struct work_struct *work)
