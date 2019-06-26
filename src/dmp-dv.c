@@ -52,7 +52,7 @@
 #define REG_IO_ADDR(DV, OF) ((void __iomem *)(DV->bar_logical) + OF)
 #define REG_BAR_ADDR(BAR, OF) ((void __iomem *)(BAR) + OF)
 
-#define U64_OVERFLOW_INTERVAL	(UINT64_MAX >> 46)
+#define U64_OVERFLOW_INTERVAL	(U64_MAX >> 46)
 #define U64_LARGER_OR_EQUAL_OVERFLOW(x, ref)	\
 	(((x) >= (ref)) || ((x) >= ((uint64_t)(ref) + U64_OVERFLOW_INTERVAL)))
 
