@@ -26,9 +26,10 @@
 
 enum TVGEN_DEV_ID {
   TVGEN_DEV_CONV =0,
-  TVGEN_DEV_FC,
   TVGEN_DEV_IPU,
   TVGEN_DEV_MAXIMIZER,
+  TVGEN_DEV_R5SHM,
+  TVGEN_DEV_R5IPI,
   TVGEN_DEV_NUM
 };
 
@@ -44,6 +45,7 @@ void tvgen_add_init(u32 value, u32 devid, u32 offset);
 void tvgen_phi_ocp_i(u32 value, u32 devid, u32 offset);
 void tvgen_phi_ocp_a(u32 value, u32 addr);
 void tvgen_mem_write(struct file* file, void* logical, dma_addr_t physical, ssize_t size, char* comment);
+void tvgen_mem_table(const struct dmp_dv_kbuf* buf, dma_addr_t physical, u64 size);
 void tvgen_mem_weight(const struct dmp_dv_kbuf* buf, dma_addr_t physical, u64 size);
 void tvgen_mem_input(const struct dmp_dv_kbuf* buf, dma_addr_t physical, u64 size);
 void tvgen_mem_output(const struct dmp_dv_kbuf* buf, dma_addr_t physical, u64 size);
