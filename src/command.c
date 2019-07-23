@@ -31,6 +31,15 @@
 
 #define REG_IO_ADDR(BAR, OF) ((void __iomem *)(BAR) + OF)
 
+/// Required alignment masks for buffers (2**ALIGN - 1)
+#define ALIGN_MASK_INPUT 1
+#define ALIGN_MASK_OUTPUT 1
+#define ALIGN_MASK_ELTWISE 1
+#define ALIGN_MASK_WEIGHTS 15
+#define ALIGN_MASK_TABLE 15
+#define ALIGN_MASK_IPU 15
+#define ALIGN_MASK_MAXIMIZER 15
+
 struct dmp_cmb_list_entry {
 	dma_addr_t physical;
 	void *logical;
@@ -182,7 +191,8 @@ void dv_cmb_finalize(struct device *dev, struct dmp_cmb *cmb)
 // NOTE: addr is uint32_t since the HW can only use 32-bit address.
 static int get_dma_addr(struct device *dev, struct dmp_cmb *cmb,
 			struct dmp_dv_kbuf *buf,
-			uint32_t *addr, uint32_t *buf_size)
+			uint32_t *addr, uint32_t *buf_size,
+			int align_mask)
 {
 	struct dmp_dmabuf_hash_entry *obj;
 	struct scatterlist *sg;
@@ -195,7 +205,7 @@ static int get_dma_addr(struct device *dev, struct dmp_cmb *cmb,
 		return 0;
 	}
 
-	if (buf->offs & 15) {  // check required alignment
+	if (buf->offs & align_mask) {  // check required alignment
 		pr_warn(DRM_DEV_NAME ": got unaligned offset %llu\n",
 			(unsigned long long)buf->offs);
 		return -EINVAL;
@@ -355,7 +365,7 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 
 	init_conv_input_size_v0(cmd, &conv_size);
 	ret = get_dma_addr(dev, cmb, &cmd->input_buf, &input_base_addr,
-			   &input_buf_size);
+			   &input_buf_size, ALIGN_MASK_INPUT);
 	if (ret) {
 		kfree(cmd);
 		pr_warn(DRM_DEV_NAME ": get_dma_addr() failed for input\n");
@@ -368,14 +378,14 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 		return -EINVAL;
 	}
 	ret = get_dma_addr(dev, cmb, &cmd->output_buf, &output_base_addr,
-			   &output_buf_size);
+			   &output_buf_size, ALIGN_MASK_OUTPUT);
 	if (ret) {
 		kfree(cmd);
 		pr_warn(DRM_DEV_NAME ": get_dma_addr() failed for output\n");
 		return ret;
 	}
 	ret = get_dma_addr(dev, cmb, &cmd->eltwise_buf, &eltwise_base_addr,
-			   &eltwise_buf_size);
+			   &eltwise_buf_size, ALIGN_MASK_ELTWISE);
 	if (ret) {
 		kfree(cmd);
 		pr_warn(DRM_DEV_NAME ": get_dma_addr() failed for eltwise\n");
@@ -456,7 +466,8 @@ static int dv_convert_conv_v0(struct device *dev, struct dmp_cmb *cmb,
 			init_conv_input_size_v0(cmd, &conv_size);
 		}
 		ret = get_dma_addr(dev, cmb, &cmd->run[i].weight_buf,
-				   &weight_base_addr, &weight_buf_size);
+				   &weight_base_addr, &weight_buf_size,
+				   ALIGN_MASK_WEIGHTS);
 		if (ret) {
 			kfree(cmd);
 			pr_warn(DRM_DEV_NAME ": get_dma_addr() failed for weights\n");
@@ -566,7 +577,8 @@ static int dv_convert_conv_v1(struct device *dev, struct dmp_cmb *cmb,
 		return -EFAULT;
 	}
 
-	ret = get_dma_addr(dev, cmb, &table, &table_base_addr, &table_buf_size);
+	ret = get_dma_addr(dev, cmb, &table, &table_base_addr, &table_buf_size,
+			   ALIGN_MASK_TABLE);
 	if (ret) {
 		pr_warn(DRM_DEV_NAME ": get_dma_addr() failed for table\n");
 		return ret;
@@ -801,19 +813,22 @@ static int dv_convert_ipu_v0(struct device *dev, struct dmp_cmb *cmb,
 		return -EFAULT;
 
 	// prep buffer 
-	ret = get_dma_addr(dev, cmb, &cmd.wr, &wr_base_addr, &wr_buf_size);
+	ret = get_dma_addr(dev, cmb, &cmd.wr, &wr_base_addr, &wr_buf_size,
+			   ALIGN_MASK_IPU);
 	if (ret)
 		return ret;
 	if (cmd.use_tex) {
 		ret = get_dma_addr(dev, cmb, &cmd.tex,
-				   &tex_base_addr, &tex_buf_size);
+				   &tex_base_addr, &tex_buf_size,
+				   ALIGN_MASK_IPU);
 		if (ret)
 			return ret;
 		cmd_size += sizeof(uint32_t) * 6;
 	}
 	if (cmd.use_rd) {
 		ret = get_dma_addr(dev, cmb, &cmd.rd,
-				   &rd_base_addr, &rd_buf_size);
+				   &rd_base_addr, &rd_buf_size,
+				   ALIGN_MASK_IPU);
 		if (ret)
 			return ret;
 		cmd_size += sizeof(uint32_t) * 4;
@@ -913,10 +928,12 @@ static int dv_convert_maximizer_v0(struct device *dev, struct dmp_cmb *cmb,
 	if (copy_from_user(&cmd, user_cmd, size))
 		return -EFAULT;
 
-	ret = get_dma_addr(dev, cmb, &cmd.input_buf, &in_base_addr, &in_sz);
+	ret = get_dma_addr(dev, cmb, &cmd.input_buf, &in_base_addr, &in_sz,
+			   ALIGN_MASK_MAXIMIZER);
 	if (ret)
 		return ret;
-	ret = get_dma_addr(dev, cmb, &cmd.output_buf, &out_base_addr, &out_sz);
+	ret = get_dma_addr(dev, cmb, &cmd.output_buf, &out_base_addr, &out_sz,
+			   ALIGN_MASK_MAXIMIZER);
 	if (ret)
 		return ret;
 
