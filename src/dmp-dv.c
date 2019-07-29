@@ -408,7 +408,7 @@ static ssize_t conv_freq_store(struct device *dev,
 	if (ret < 0)
 		return ret;
 
-	if (freq <= 350 && freq >= 30) {
+	if (freq <= 400 && freq >= 30) {
 		if (freq <= 50)
 			divisor0 = 30;
 		else if (freq <= 75)
@@ -969,5 +969,5 @@ module_exit(drm_exit);
 
 MODULE_DESCRIPTION("DV core driver");
 MODULE_AUTHOR("Digital Media Professionals Inc.");
-MODULE_VERSION("7.2.20190716");
+MODULE_VERSION("7.2.20190729");
 MODULE_LICENSE("GPL");
