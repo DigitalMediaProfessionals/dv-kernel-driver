@@ -55,46 +55,39 @@
 #ifndef USE_DEVTREE
 static int irq_no[DRM_NUM_SUBDEV] = {48};
 static unsigned int reg_base = 0x80000000;
+static const uint32_t bar_phys_r5ipi = 0xff340000;
+static const uint32_t bar_phys_r5shm = 0x7ed00000;
+static const uint32_t r5ipi_map_size = 0x1000;
+static const uint32_t r5shm_map_size = 0x1000000;
+#else
+static uint32_t bar_phys_r5ipi = 0;
+static uint32_t bar_phys_r5shm = 0;
+static uint32_t r5ipi_map_size = 0;
+static uint32_t r5shm_map_size = 0;
 #endif
-// For control conv frequency on FPGA device
 static const uint32_t bar_phys_crl_apb = 0xff5e0000;
 
-static unsigned int reg_offset[DRM_NUM_SUBDEV] = { UINT_MAX, };
-static unsigned int reg_size[DRM_NUM_SUBDEV] = { 0x1000, };
-static int irq_addr[DRM_NUM_SUBDEV] = { 0x20, };
-static const char *subdev_name[DRM_NUM_SUBDEV] = { "conv", };
-
-#define DEF_UNIFIED_BUFFER_SIZE_KB 1024
-//uint32_t UNIFIED_BUFFER_SIZE = DEF_UNIFIED_BUFFER_SIZE_KB << 10;
-//uint32_t MAX_CONV_KERNEL_SIZE = 7;
-//uint32_t conv_kick_count = 0;
-static uint32_t conv_svn_version = 0;
-//uint32_t opt = 0x8008300;
-
-struct st_global_vars /*{
-	// For the driver in general
-	uint32_t UNIFIED_BUFFER_SIZE;
-	uint32_t MAX_CONV_KERNEL_SIZE;
-	uint32_t conv_kick_count;
-	uint32_t opt;
-
-	// For the program_driver
-	unsigned bufA, bufB, bufS, bufC;
-	unsigned prev_ubuf_ofm_offset;
-	int cofst;
-}*/ global_vars = {
-	// For the driver in general
-	DEF_UNIFIED_BUFFER_SIZE_KB << 10,
-	7,
-	0,
-	0x8008300,
-	
-	// For the program_driver
-	0, 0, 0, 0,
-	0,
-	0
+static unsigned int reg_offset[DRM_NUM_SUBDEV] = {
+	UINT_MAX,
+	UINT_MAX,
+	UINT_MAX
+};
+static unsigned int reg_size[DRM_NUM_SUBDEV] = {0x1000, 0x1000, 0x1000};
+static int irq_addr[DRM_NUM_SUBDEV] = {IPI_ISR_OFFSET, 0x20, 0x20};
+static const char *subdev_name[DRM_NUM_SUBDEV] = {
+	"conv",
+	"ipu",
+	"maximizer"
 };
 
+#define DEF_UNIFIED_BUFFER_SIZE_KB 1024
+uint32_t UNIFIED_BUFFER_SIZE = DEF_UNIFIED_BUFFER_SIZE_KB << 10;
+uint32_t MAX_CONV_KERNEL_SIZE = 7;
+uint32_t conv_kick_count = 0;
+static uint32_t conv_svn_version = 0;
+
+void *bar_logi_r5ipi = 0;
+void *bar_logi_r5shm = 0;
 void *bar_logi_crl_apb = 0;
 
 atomic_t input_count = ATOMIC_INIT(0);
@@ -140,11 +133,18 @@ struct drm_dev {
 };
 
 static struct class *dddrm_class = NULL;
+static DEFINE_MUTEX(dv_firmware_lock);
 
-static irqreturn_t handle_int_conv(int irq, void *dev_id)
+static irqreturn_t handle_int_r5(int irq, void *dev_id)
 {
 	struct dmp_dev *dev = dev_id;
+	uint32_t val;
+
+	val = ioread32(REG_BAR_ADDR(bar_logi_r5ipi, IPI_ISR_OFFSET));
+	if (!(val & IPI_MASK))
+		return IRQ_NONE;
 	spin_lock(&dev->int_exclusive);
+	iowrite32(IPI_MASK, REG_BAR_ADDR(bar_logi_r5ipi, IPI_ISR_OFFSET));
 
 	++dev->hw_id;
 	wake_up_interruptible(&dev->wait_queue);
@@ -182,6 +182,7 @@ static int wait_cmd_id(struct dmp_dev *dev, uint64_t cmd_id)
 
 	ret = wait_event_interruptible_timeout(dev->wait_queue,
 		(dev->hw_id >= cmd_id), DRM_WAIT_TIMEOUT);
+
 	if (ret > 0)
 		return 0;
 	else if (ret == 0) {
@@ -256,22 +257,32 @@ static int drm_release(struct inode *inode, struct file *file)
 	return 0;
 }
 
-static uint64_t c[32];
 static void dv_post_conv_command(struct dmp_cmb *cmb, void *bar_logical)
 {
 	// Update I/O bandwith measurement counters
+	uint32_t counters[16];
 	uint32_t input_inc = 0, output_inc = 0, weights_inc = 0;
-	int i;
-	for (i = 0; i < 32; ++i) {
-		uint32_t a = ioread32(REG_BAR_ADDR(bar_logical, 0x600 + i * 4)); //2=>6:Rthr
-		if((i & 3) == 3)
-			output_inc += a; //data write valid & ready
-		if(i & 4)
-			weights_inc += a; //weight read
-		if(i & 8)
-			input_inc += a; // input read
-		//atomic_add(a,&counters[i]);
-		c[i] += a;
+	int i, offset;
+
+	for (i = 0; i < 8; ++i) {
+		offset = 0x200 + i * 4;
+		counters[i] = ioread32(REG_BAR_ADDR(bar_logical, offset));
+	}
+	for (i = 8; i < 16; ++i) {
+		offset = 0x240 + i * 4;
+		counters[i] = ioread32(REG_BAR_ADDR(bar_logical, offset));
+	}
+
+	for (i = 0; i < 16; ++i) {
+		// data write valid & ready
+		if ((i & 3) == 3)
+			output_inc += counters[i];
+		// weight read
+		if (i & 4)
+			weights_inc += counters[i];
+		// input read
+		if (i & 8)
+			input_inc += counters[i];
 	}
 	atomic_add(input_inc, &input_count);
 	atomic_add(output_inc, &output_count);
@@ -281,14 +292,20 @@ static void dv_post_conv_command(struct dmp_cmb *cmb, void *bar_logical)
 static int (*cmd_func[DRM_NUM_SUBDEV])(struct device *, struct dmp_cmb *,
 				       struct dmp_dv_kcmd *) = {
 	dv_convert_conv_command,
+	dv_convert_ipu_command,
+	dv_convert_maximizer_command,
 };
 
 static void (*run_func[DRM_NUM_SUBDEV])(struct dmp_cmb *, void *) = {
 	dv_run_conv_command,
+	dv_run_ipu_command,
+	dv_run_maximizer_command,
 };
 
 static void (*post_func[DRM_NUM_SUBDEV])(struct dmp_cmb *, void *) = {
 	dv_post_conv_command,
+	NULL,
+	NULL,
 };
 
 static long drm_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
@@ -360,48 +377,6 @@ static struct file_operations drm_file_operations = {
 	.unlocked_ioctl = drm_ioctl,
 };
 
-static ssize_t opt_store(struct device *dev,struct device_attribute *attr,
-			 const char *buf, size_t len) {
-	int ret = 0;
-	ret = kstrtouint(buf, 0, &global_vars.opt);
-	return ret ? ret : len;
-}
-
-static ssize_t opt_show(struct device *dev,struct device_attribute *attr,
-			char *buf) {
-	return scnprintf(buf, PAGE_SIZE, "opt=%x\n", global_vars.opt);
-}
-
-static ssize_t pmc_show(struct device *dev,struct device_attribute *attr, char *buf) {
-	int i, j;
-	ssize_t s = 0, l;
-	uint64_t tot = 0;
-	for (j = 0; j < 32; j++) {
-		//c[j] = atomic_xchg(&counters[j], 0);
-		tot += c[j];
-	}
-	for (j = 0; j < 32; j++) {
-		ssize_t l = scnprintf(buf, PAGE_SIZE, "%2x %9llu %llu\n",
-				      j, c[j], c[j] * 10000 / tot);
-		buf += l;
-		s += l;
-	}
-	for (j = 0; j < 5; j++) {
-		uint64_t n = 0;
-		for (i = 0; i < 32; i++) {
-			if (i & (1 << j))
-				n += c[i];
-		}
-		l = scnprintf(buf, PAGE_SIZE, "%2x %9llu %llu\n",
-				      j, n, n * 10000 / tot);
-		buf += l;
-		s += l;
-	}
-	for (j = 0; j < 32; j++)
-		c[j] = 0;
-	return s + scnprintf(buf, PAGE_SIZE, "total %9llu\n", tot);
-}
-
 static ssize_t conv_freq_show(struct device *dev,
                               struct device_attribute *attr,
                               char *buf)
@@ -470,7 +445,7 @@ static ssize_t conv_kick_count_show(struct device *dev,
 				    struct device_attribute *attr,
 				    char *buf)
 {
-	const int kick_count = global_vars.conv_kick_count;
+	int kick_count = conv_kick_count;
 	return scnprintf(buf, PAGE_SIZE, "%d\n", kick_count);
 }
 
@@ -478,14 +453,14 @@ static ssize_t ub_size_show(struct device *dev,
 			    struct device_attribute *attr,
 			    char *buf)
 {
-	return scnprintf(buf, PAGE_SIZE, "%d\n", global_vars.UNIFIED_BUFFER_SIZE);
+	return scnprintf(buf, PAGE_SIZE, "%d\n", UNIFIED_BUFFER_SIZE);
 }
 
 static ssize_t max_kernel_size_show(struct device *dev,
 				    struct device_attribute *attr,
 				    char *buf)
 {
-	return scnprintf(buf, PAGE_SIZE, "%d\n", global_vars.MAX_CONV_KERNEL_SIZE);
+	return scnprintf(buf, PAGE_SIZE, "%d\n", MAX_CONV_KERNEL_SIZE);
 }
 
 static ssize_t hw_version_show(struct device *dev,
@@ -559,8 +534,6 @@ static DEVICE_ATTR_RO(max_input_size);
 static DEVICE_ATTR_RO(input_bytes);
 static DEVICE_ATTR_RO(output_bytes);
 static DEVICE_ATTR_RO(weights_bytes);
-static DEVICE_ATTR_RO(pmc);
-static DEVICE_ATTR_RW(opt);
 
 static struct attribute *drm_conv_attrs[] = {
 	&dev_attr_conv_freq.attr,
@@ -574,8 +547,6 @@ static struct attribute *drm_conv_attrs[] = {
 	&dev_attr_input_bytes.attr,
 	&dev_attr_output_bytes.attr,
 	&dev_attr_weights_bytes.attr,
-	&dev_attr_pmc.attr,
-	&dev_attr_opt.attr,
 	NULL
 };
 
@@ -588,8 +559,18 @@ static const struct attribute_group *drm_conv_attr_groups[] = {
 	NULL
 };
 
+static const struct attribute_group *drm_ipu_attr_groups[] = {
+	NULL
+};
+
+static const struct attribute_group *drm_maximizer_attr_groups[] = {
+	NULL
+};
+
 static const struct attribute_group **drm_attr_groups[DRM_NUM_SUBDEV] = {
-	drm_conv_attr_groups
+	drm_conv_attr_groups,
+	drm_ipu_attr_groups,
+	drm_maximizer_attr_groups,
 };
 
 int drm_register_chrdev(struct drm_dev *drm_dev)
@@ -640,13 +621,11 @@ int drm_register_chrdev(struct drm_dev *drm_dev)
 
 			rIRQ = drm_dev->subdev[i].irqno;
 			if (i == 0) {
-				err = request_irq(rIRQ, handle_int_conv, IRQF_SHARED,
+				err = request_irq(rIRQ, handle_int_r5, IRQF_SHARED,
 					  DRM_DEV_NAME, &(drm_dev->subdev[i]));
-				printk(KERN_INFO "  [%d] request_irq:%d CONV\n", i, rIRQ);
 			} else {
 				err = request_irq(rIRQ, handle_int, IRQF_SHARED,
 					  DRM_DEV_NAME, &(drm_dev->subdev[i]));
-				printk(KERN_INFO "  [%d] request_irq:%d\n", i, rIRQ);
 			}
 			if (err) {
 				device_destroy(dddrm_class,
@@ -724,14 +703,13 @@ int drm_unregister_chrdev(struct drm_dev *drm_dev)
 static int drm_dev_probe(struct platform_device *pdev)
 {
 	int i = 0, err = 0, ubuf_size = 0;
-	int inited = 0;
 	struct drm_dev *drm_dev;
 #ifdef USE_DEVTREE
 	struct device_node *dev_node, *parent_node;
 	u32 addr_cells, size_cells;
 	unsigned int reg_base, reg_index, size_index;
 	const char * sys_str = 0x00;
-	int subdev_phys_idx[DRM_NUM_SUBDEV] = { -1, } ;
+	int subdev_phys_idx[DRM_NUM_SUBDEV] = {-1, -1, -1};
 	int ret = 0;
 #endif
 
@@ -769,13 +747,17 @@ static int drm_dev_probe(struct platform_device *pdev)
 	}
 	of_property_read_u32_index(dev_node, "reg", reg_index, &reg_base);
 	// Try to read device dependent properties
-	global_vars.UNIFIED_BUFFER_SIZE = 0;
-	of_property_read_u32(dev_node, "ubuf-size", &global_vars.UNIFIED_BUFFER_SIZE);
-	of_property_read_u32(dev_node, "max-conv-size", &global_vars.MAX_CONV_KERNEL_SIZE);
+	UNIFIED_BUFFER_SIZE = 0;
+	of_property_read_u32(dev_node, "ubuf-size", &UNIFIED_BUFFER_SIZE);
+	of_property_read_u32(dev_node, "max-conv-size", &MAX_CONV_KERNEL_SIZE);
 	ret = of_property_read_string(dev_node, "system", &sys_str);
 	if (ret == -EINVAL /* property does not exist */
 		|| strcmp(sys_str, "CONV") == 0) {
 		subdev_phys_idx[0] = 0;
+	} else if (strcmp(sys_str, "CONV,MX,IPU") == 0) {
+		subdev_phys_idx[0] = 0;
+		subdev_phys_idx[1] = 2;
+		subdev_phys_idx[2] = 1;
 	} else {
 		err = -EINVAL;
 		pr_err(DRM_DEV_NAME ": %s is not valid DV system.\n", sys_str);
@@ -791,7 +773,6 @@ static int drm_dev_probe(struct platform_device *pdev)
 #ifdef USE_DEVTREE
 			drm_dev->subdev[i].irqno = of_irq_get(dev_node,
 							      subdev_phys_idx[i]);
-			printk(KERN_INFO "  [%d] of_irq_get:%d\n", i, drm_dev->subdev[i].irqno);
 #else
 			drm_dev->subdev[i].irqno = irq_no[i];
 #endif
@@ -812,30 +793,57 @@ static int drm_dev_probe(struct platform_device *pdev)
 			drm_dev->subdev[i].init_done = 0;
 			drm_dev->subdev[i].cmd_id = 0;
 			drm_dev->subdev[i].hw_id = 0;
-			printk(KERN_INFO "  [%d] P%08llx, L%p, %ld\n", i, drm_dev->subdev[i].bar_physical, drm_dev->subdev[i].bar_logical, drm_dev->subdev[i].bar_size);
 		}
 	}
 
-	inited = ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x800))&7 ? 0: 1;
+#ifdef USE_DEVTREE
+	// Get IPI and SHM base address
+	dev_node = of_find_node_by_name(NULL, "ipi");
+	if (dev_node == NULL) {
+		pr_err(DRM_DEV_NAME ": Can't find ipi_amp in device tree.\n");
+		goto fail_dt_system;
+	}
+	of_property_read_u32_index(dev_node, "reg", reg_index, &bar_phys_r5ipi);
+	of_property_read_u32_index(dev_node, "reg", size_index, &r5ipi_map_size);
+	of_node_put(dev_node);
 
-	// Map CRL_APB registers (for control conv frequency on FPGA device)
+	dev_node = of_find_node_by_name(NULL, "shm");
+	if (dev_node == NULL) {
+		pr_err(DRM_DEV_NAME ": Can't find shm0 in device tree.\n");
+		goto fail_dt_system;
+	}
+	of_property_read_u32_index(dev_node, "reg", reg_index, &bar_phys_r5shm);
+	of_property_read_u32_index(dev_node, "reg", size_index, &r5shm_map_size);
+	of_node_put(dev_node);
+#endif
+	// Map IPI registers and initialize IPI interrupts
+	bar_logi_r5ipi = ioremap_nocache(bar_phys_r5ipi, r5ipi_map_size);
+	/* disable IPI interrupt */
+	iowrite32(IPI_MASK, REG_BAR_ADDR(bar_logi_r5ipi, IPI_IDR_OFFSET));
+	/* clear old IPI interrupt */
+	iowrite32(IPI_MASK, REG_BAR_ADDR(bar_logi_r5ipi, IPI_ISR_OFFSET));
+	/* Enable IPI interrupt */
+	iowrite32(IPI_MASK, REG_BAR_ADDR(bar_logi_r5ipi, IPI_IER_OFFSET));
+	iowrite32(IPI_MASK, REG_BAR_ADDR(bar_logi_r5ipi, IPI_IER_OFFSET));
+
+	// Map SHM memory area to communicate with R5
+	bar_logi_r5shm = ioremap_nocache(bar_phys_r5shm, r5shm_map_size);
+
+	// Map CRL_APB registers
 	bar_logi_crl_apb = ioremap_nocache(bar_phys_crl_apb, 0x1000);
 
 	if (subdev_phys_idx[0] >= 0) {
 		// Get unified buffer size from register
 		ubuf_size = ioread32(REG_IO_ADDR((&drm_dev->subdev[0]), 0x11c));
 		if (ubuf_size > 0)
-			global_vars.UNIFIED_BUFFER_SIZE = ubuf_size;
+			UNIFIED_BUFFER_SIZE = ubuf_size;
 
 		// Get SVN version
 		conv_svn_version = 93;//ioread32(
 			//REG_IO_ADDR((&drm_dev->subdev[0]), 0x144));
-		if(!inited){
+
 		// Configure performance counter to watch I/O events
 		iowrite32(0x177654, REG_IO_ADDR((&drm_dev->subdev[0]), 0x144));
-		//stop counter for newRTL
-		iowrite32(0,        REG_IO_ADDR((&drm_dev->subdev[0]), 0xf4));
-		}
 	}
 
 	err = drm_register_chrdev(drm_dev);
@@ -844,7 +852,7 @@ static int drm_dev_probe(struct platform_device *pdev)
 		goto fail_register_chrdev;
 	}
 	dev_dbg(&pdev->dev, "probe successful: UNIFIED_BUFFER_SIZE=%u\n",
-		global_vars.UNIFIED_BUFFER_SIZE);
+		UNIFIED_BUFFER_SIZE);
 
 	return 0;
 
@@ -883,6 +891,8 @@ static int drm_dev_remove(struct platform_device *pdev)
 
 		platform_set_drvdata(pdev, NULL);
 	}
+	iounmap(bar_logi_r5ipi);
+	iounmap(bar_logi_r5shm);
 	iounmap(bar_logi_crl_apb);
 
 	dev_dbg(&pdev->dev, "remove successful\n");
@@ -891,7 +901,7 @@ static int drm_dev_remove(struct platform_device *pdev)
 
 #ifdef USE_DEVTREE
 static const struct of_device_id drm_of_ids[] = {
-	{ .compatible = "dmp,dv700riscv" },
+	{ .compatible = "dmp,dv700" },
 	{ }
 };
 #endif
@@ -959,5 +969,5 @@ module_exit(drm_exit);
 
 MODULE_DESCRIPTION("DV core driver");
 MODULE_AUTHOR("Digital Media Professionals Inc.");
-MODULE_VERSION("7.40.20200824");
+MODULE_VERSION("7.2.20190729");
 MODULE_LICENSE("GPL");
