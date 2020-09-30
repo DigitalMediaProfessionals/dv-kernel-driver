@@ -20,30 +20,27 @@
 #define _DMP_DV_H
 
 #define DRM_DEV_NAME "dmp_dv"
-#define DRM_NUM_SUBDEV 3
+#define DRM_NUM_SUBDEV 1
 #define DRM_WAIT_TIMEOUT (2 * HZ)
 #define DRM_MAX_WAIT_COUNT 10
-
-/* IPI registers offset */
-#define IPI_TRIG_OFFSET 0x0  /* IPI trigger reg offset */
-#define IPI_OBS_OFFSET  0x4  /* IPI observation reg offset */
-#define IPI_ISR_OFFSET  0x10 /* IPI interrupt status reg offset */
-#define IPI_IMR_OFFSET  0x14 /* IPI interrupt mask reg offset */
-#define IPI_IER_OFFSET  0x18 /* IPI interrupt enable reg offset */
-#define IPI_IDR_OFFSET  0x1C /* IPI interrup disable reg offset */
-
-#define IPI_MASK        0x100 /* IPI mask for kick from RPU. */
 
 struct device;
 struct dmp_dv_kcmd;
 struct dmp_cmb;
 
-extern uint32_t UNIFIED_BUFFER_SIZE;
-extern uint32_t MAX_CONV_KERNEL_SIZE;
-extern uint32_t conv_kick_count;
+struct st_global_vars {
+	// For the driver in general
+	uint32_t UNIFIED_BUFFER_SIZE;
+	uint32_t MAX_CONV_KERNEL_SIZE;
+	uint32_t conv_kick_count;
+	uint32_t opt;
 
-extern void *bar_logi_r5ipi;
-extern void *bar_logi_r5shm;
+	// For the program_driver
+	unsigned bufA, bufB, bufS, bufC;
+	unsigned prev_ubuf_ofm_offset;
+	int cofst;
+};
+extern struct st_global_vars global_vars;
 
 struct dmp_cmb *dv_cmb_init(struct device *dev);
 void dv_cmb_finalize(struct device *dev, struct dmp_cmb *cmb);
